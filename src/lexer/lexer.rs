@@ -250,6 +250,7 @@ fn check_whitespace(mut state: LexerState, c: char) -> LexerState {
             '\n' => {
                 state.line += 1;
                 state.column = 1;
+                state = build_token(state, |t| Token::NewLine(t), "\n".to_string());
             }
             '\t' => state.column += 4,
             _ => state.column += 1,
