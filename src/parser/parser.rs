@@ -66,6 +66,15 @@ fn parse_top_level<'a>(mut state: State<'a>) -> Result<Vec<ASTNode>, String> {
         if state.tokens.is_empty() {
             break;
         }
+        match state.tokens {
+            [Token::EOF(_)] => break,
+            [Token::NewLine(_), rest @ ..] => {
+                state = state.update(rest, None);
+                continue;
+            }
+            [Token::Pub(_), rest @ ..] => {}
+            _ => todo!("add the rest of public types"),
+        }
         match process(state) {
             Ok((new_node, new_state)) => {
                 state = new_state;
@@ -138,6 +147,7 @@ fn process<'a>(state: State<'a>) -> ParserReturn<ASTNode> {
         [Token::Function(x) | Token::Let(x), rest @ ..] => {
             parse_function(state.update(rest, Some(x)))?
         }
+        [Token::TypeKeyword(x), Token::Identifier(ident), Token::Assign(_), rest @ ..] => {}
         _ => Err(format!(
             "Not implemented: {:?}",
             state.tokens.first().unwrap()
@@ -317,3 +327,5 @@ fn parse_type_literal(state: State) -> Result<(TypeDeclaration, State), String> 
         )),
     }
 }
+
+// fn parse_type_definition(state: State) -> ParserReturn<TypeDeclaration>
