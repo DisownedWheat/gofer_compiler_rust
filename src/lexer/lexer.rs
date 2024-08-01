@@ -1,15 +1,15 @@
 use super::tokens::{Token, TokenValue};
 
-struct LexerState {
+struct Lexer {
     tokens: Vec<Token>,
     buffer: Vec<char>,
     line: usize,
     column: usize,
 }
 
-impl LexerState {
+impl Lexer {
     pub fn new() -> Self {
-        LexerState {
+        Lexer {
             tokens: Vec::new(),
             buffer: Vec::new(),
             line: 1,
@@ -24,19 +24,19 @@ pub fn lex(file_path: String) -> Vec<Token> {
         .as_str()
         .chars()
         .into_iter()
-        .fold(Ok(LexerState::new()), |acc, c| f(acc, c))
+        .fold(Ok(Lexer::new()), |acc, c| f(acc, c))
         .expect("Error")
         .tokens
 }
 
-fn f(state: Result<LexerState, String>, c: char) -> Result<LexerState, String> {
+fn f(state: Result<Lexer, String>, c: char) -> Result<Lexer, String> {
     match state {
         Ok(state) => f_inner(state, c),
         Err(e) => Err(e),
     }
 }
 
-fn f_inner(mut state: LexerState, c: char) -> Result<LexerState, String> {
+fn f_inner(mut state: Lexer, c: char) -> Result<Lexer, String> {
     match state.buffer[..] {
         ['"', ..] => {
             if c == '"' {
@@ -192,7 +192,7 @@ fn f_inner(mut state: LexerState, c: char) -> Result<LexerState, String> {
     }
 }
 
-fn match_char(mut state: LexerState, c: char) -> Result<LexerState, String> {
+fn match_char(mut state: Lexer, c: char) -> Result<Lexer, String> {
     match c {
         '"' => {
             state = parse_buffer(state);
@@ -243,7 +243,7 @@ fn match_char(mut state: LexerState, c: char) -> Result<LexerState, String> {
     }
 }
 
-fn check_whitespace(mut state: LexerState, c: char) -> LexerState {
+fn check_whitespace(mut state: Lexer, c: char) -> Lexer {
     if c.is_whitespace() {
         state = parse_buffer(state);
         match c {
@@ -261,7 +261,7 @@ fn check_whitespace(mut state: LexerState, c: char) -> LexerState {
     state
 }
 
-fn parse_buffer(mut state: LexerState) -> LexerState {
+fn parse_buffer(mut state: Lexer) -> Lexer {
     let collected = state
         .buffer
         .iter()
@@ -311,6 +311,12 @@ fn parse_buffer(mut state: LexerState) -> LexerState {
             "false" => {
                 state = build_token(state, |t| Token::False(t), collected);
             }
+            "enum" => {
+                state = build_token(state, |t| Token::Enum(t), collected);
+            }
+            "interface" => {
+                state = build_token(state, |t| Token::Interface(t), collected);
+            }
             _ => {
                 state = build_token(state, |t| Token::Identifier(t), collected);
             }
@@ -335,7 +341,7 @@ fn check_number(l: Vec<char>) -> bool {
     })
 }
 
-fn build_token<F>(mut state: LexerState, token_constructor: F, value: String) -> LexerState
+fn build_token<F>(mut state: Lexer, token_constructor: F, value: String) -> Lexer
 where
     F: FnOnce(TokenValue) -> Token,
 {

@@ -3,6 +3,7 @@
 pub type ASTString = String;
 pub type LogicBlock = Vec<ASTNode>;
 pub type StructMethodDefinition = (ASTString, TypeDeclaration);
+pub type ASTNodeIndex = usize;
 
 // Imports
 #[derive(Debug)]
@@ -87,8 +88,9 @@ pub struct FunctionArgument {
 
 #[derive(Debug)]
 pub struct FunctionDefinition {
-    pub name: ASTString,
+    pub name: Option<ASTString>,
     pub arguments: Vec<FunctionArgument>,
+    pub return_type: Option<Type>,
     pub body: LogicBlock,
     pub pointer: Option<Identifier>,
 }
