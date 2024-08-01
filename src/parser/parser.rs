@@ -147,7 +147,9 @@ fn process<'a>(state: State<'a>) -> ParserReturn<ASTNode> {
         [Token::Function(x) | Token::Let(x), rest @ ..] => {
             parse_function(state.update(rest, Some(x)))?
         }
-        [Token::TypeKeyword(x), Token::Identifier(ident), Token::Assign(_), rest @ ..] => {}
+        [Token::TypeKeyword(x), Token::Identifier(ident), Token::Assign(_), rest @ ..] => {
+            todo!("parse types")
+        }
         _ => Err(format!(
             "Not implemented: {:?}",
             state.tokens.first().unwrap()
