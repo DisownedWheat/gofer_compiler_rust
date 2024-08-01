@@ -96,6 +96,32 @@ pub struct FunctionDefinition {
 }
 
 #[derive(Debug)]
+pub struct Tuple {
+    length: usize,
+    values: Vec<TypeDeclaration>,
+}
+
+#[derive(Debug)]
+pub enum EnumBody {
+    Tuple(Tuple),
+    Type(TypeDeclaration),
+    String(ASTString),
+    Number(ASTString),
+}
+
+#[derive(Debug)]
+pub struct Enum {
+    pub name: ASTString,
+    fields: Vec<(String, EnumBody)>,
+}
+
+#[derive(Debug)]
+pub enum TopLevel {
+    FunctionDefinition((bool, FunctionDefinition)),
+    RecordDefinition(RecordDefinition),
+}
+
+#[derive(Debug)]
 pub enum ASTNode {
     Root(Vec<ASTNode>),
     LogicBlock(LogicBlock),
@@ -110,6 +136,8 @@ pub enum ASTNode {
     ArrayLiteral(Vec<ASTNode>),
     StringLiteral(ASTString),
     NumberLiteral(ASTString),
+    Enum(Enum),
+    Tuple(Tuple),
     NoOp,
     EOF,
 }
