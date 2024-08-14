@@ -6,8 +6,6 @@ use crate::lexer::tokens::{Token, TokenValue};
 struct State<'a> {
     line: usize,
     column: usize,
-    // token_index: usize,
-    // total_length: usize,
     tokens: &'a [Token],
 }
 
@@ -32,6 +30,7 @@ impl<'a> State<'a> {
 }
 
 type ParserReturn<'a, T> = Result<(T, State<'a>), String>;
+
 pub enum Delimiter {
     Func(Box<dyn Fn(&[Token]) -> bool>),
     None,
@@ -43,7 +42,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<ASTNode, String> {
         column: 1,
         tokens: &tokens[..],
     };
-    match internal_parse(state, Delimiter::None) {
+    match parse_top_level(state) {
         Ok((vec, _)) => Ok(ASTNode::Root(vec)),
         Err(e) => Err(e),
     }
@@ -60,30 +59,39 @@ fn ignore_newlines(tokens: &[Token]) -> &[Token] {
     &tokens[index..]
 }
 
-fn parse_top_level<'a>(mut state: State<'a>) -> Result<Vec<ASTNode>, String> {
+fn parse_top_level<'a>(mut state: State<'a>) -> Result<(Vec<ASTNode>, State<'a>), String> {
     let mut vec = Vec::<ASTNode>::new();
     loop {
+        println!("{:?}", vec);
         if state.tokens.is_empty() {
             break;
         }
         match state.tokens {
             [Token::EOF(_)] => break,
+            [Token::Import(_), rest @ ..] => {
+                let (node, new_state) = parse_import(state.update(rest, None))?;
+                state = new_state;
+                vec.push(node);
+                continue;
+            }
             [Token::NewLine(_), rest @ ..] => {
                 state = state.update(rest, None);
                 continue;
             }
-            [Token::Pub(_), rest @ ..] => {}
-            _ => todo!("add the rest of public types"),
-        }
-        match process(state) {
-            Ok((new_node, new_state)) => {
+            [Token::Pub(x), rest @ ..] => {
+                let (node, new_state) = process(state.update(rest, Some(x)))?;
                 state = new_state;
-                vec.push(new_node);
+                vec.push(ASTNode::TopLevel(true, Box::new(node)));
+                continue;
             }
-            Err(e) => return Err(e),
+            _ => {
+                let (node, new_state) = process(state)?;
+                state = new_state;
+                vec.push(ASTNode::TopLevel(false, Box::new(node)));
+            }
         }
     }
-    Ok(vec)
+    Ok((vec, state))
 }
 
 fn internal_parse<'a>(
@@ -131,7 +139,7 @@ fn process<'a>(state: State<'a>) -> ParserReturn<ASTNode> {
     let (node, new_state) = match &state.tokens {
         [] => (ASTNode::EOF, state),
         [Token::EOF(_), rest @ ..] => (ASTNode::EOF, state.update(rest, None)),
-        [Token::NewLine(x), rest @ ..] => (ASTNode::NoOp, state.update(rest, None)),
+        [Token::NewLine(_), rest @ ..] => (ASTNode::NoOp, state.update(rest, None)),
         [Token::String(s), rest @ ..] => (
             ASTNode::StringLiteral(take_value(s)),
             state.update(rest, Some(s)),
