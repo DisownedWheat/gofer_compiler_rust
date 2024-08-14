@@ -24,16 +24,11 @@ pub fn lex(file_path: String) -> Vec<Token> {
         .as_str()
         .chars()
         .into_iter()
-        .fold(Ok(Lexer::new()), |acc, c| f(acc, c))
+        .fold(Ok(Lexer::new()), |acc, c| {
+            acc.map(|state| f_inner(state, c))?
+        })
         .expect("Error")
         .tokens
-}
-
-fn f(state: Result<Lexer, String>, c: char) -> Result<Lexer, String> {
-    match state {
-        Ok(state) => f_inner(state, c),
-        Err(e) => Err(e),
-    }
 }
 
 fn f_inner(mut state: Lexer, c: char) -> Result<Lexer, String> {
