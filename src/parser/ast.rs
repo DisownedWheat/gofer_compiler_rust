@@ -118,6 +118,7 @@ pub struct Enum {
 #[derive(Debug)]
 pub enum TopLevel {
     FunctionDefinition((bool, FunctionDefinition)),
+    StructMethodDefinition((bool, FunctionDefinition)),
     RecordDefinition(RecordDefinition),
 }
 

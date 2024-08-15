@@ -84,6 +84,13 @@ fn parse_top_level<'a>(mut state: State<'a>) -> Result<(Vec<ASTNode>, State<'a>)
                 vec.push(ASTNode::TopLevel(true, Box::new(node)));
                 continue;
             }
+            [Token::Function(x), i @ Token::Identifier(_), rest @ ..] => {
+                let mut re_built: Vec<Token> = vec![*i];
+                ignore_newlines(rest)
+                    .into_iter()
+                    .for_each(|x| re_built.push(*x));
+                let (node, new_state) = parse_function(state.update(&re_built[..], Some(x)))?;
+            }
             _ => {
                 let (node, new_state) = process(state)?;
                 state = new_state;
@@ -253,15 +260,11 @@ fn parse_function(state: State) -> ParserReturn<ASTNode> {
 
     match state.tokens {
         [Token::Identifier(_), Token::LParen(t), rest @ ..] => {
+            todo!("Actually parse function");
             Ok((ASTNode::NoOp, state.update(rest, Some(t))))
         }
-        [Token::LParen(_), rest @ ..] => {
-            let result = parse_struct_method_definition(state.update(rest, None));
-            match result {
-                Ok((t, new_state)) => Ok((ASTNode::NoOp, new_state.update(rest, None))),
-                Err(e) => Err(e),
-            }
-        }
+        [Token::LParen(_), rest @ ..] => parse_struct_method_definition(state.update(rest, None))
+            .map(|(t, new_state)| (ASTNode::StructMethodDefinition(t), new_state)),
         _ => todo!("parse_function"),
     }
 }
@@ -284,10 +287,7 @@ fn parse_struct_method_definition(state: State) -> ParserReturn<StructMethodDefi
     }
 }
 
-fn parse_function_args<'a>(
-    state: State<'a>,
-    tokens: &'a [Token],
-) -> Result<(Vec<FunctionArgument>, State<'a>), String> {
+fn parse_function_args<'a>(state: State<'a>) -> Result<(Vec<FunctionArgument>, State<'a>), String> {
     let mut previous_was_comma = false;
     let mut mutable = false;
     let mut args = vec![];
