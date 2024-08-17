@@ -150,6 +150,88 @@ where
     Ok((constructor(value), state))
 }
 
+fn parse_statement<'a>(state: State<'a>) -> ParserReturn<ASTNode> {
+    match state.tokens {
+        [Token::Let(x), rest @ ..] => parse_let_statement(state.update(rest, Some(x))),
+        _ => process(state),
+    }
+}
+
+fn parse_let_statement<'a>(state: State<'a>) -> ParserReturn<ASTNode> {
+    let (left, new_state) = parse_left_let_statement(state)?;
+    match new_state.tokens {
+        [Token::Assign(x), rest @ ..] => {
+            let (right, new_state) = process(new_state.update(rest, Some(x)))?;
+            Ok((
+                ASTNode::LetExpression(LetExpression {
+                    identifier: left,
+                    value: Box::new(right),
+                }),
+                new_state,
+            ))
+        }
+        _ => Err("Invalid let statement".to_string()),
+    }
+}
+
+fn parse_left_let_statement<'a>(mut state: State<'a>) -> ParserReturn<IdentifierType> {
+    let mut ident: Option<IdentifierType> = None;
+    let is_mut = match state.tokens {
+        [Token::Mut(x), rest @ ..] => {
+            state = state.update(rest, Some(x));
+            true
+        }
+        _ => false,
+    };
+
+    match state.tokens {
+        [Token::Identifier(n), rest @ ..] => {
+            let new_state = state.update(rest, Some(n));
+            let ident = Some(IdentifierType::Identifier((
+                Identifier {
+                    value: take_value(n),
+                    mutable: is_mut,
+                },
+                None,
+            )));
+            state = new_state;
+        }
+        [Token::LParen(x), rest @ ..] => {
+            state = state.update(rest, Some(x));
+            loop {
+                match state.tokens {}
+            }
+        }
+        [Token::LBrace(x), rest @ ..] => {}
+        [Token::LBracket(x), rest @ ..] => {}
+    };
+
+    loop {
+        match state.tokens {
+            [Token::Colon(x), rest @ ..] => {
+                let (t, new_state) = parse_type_literal(state.update(rest, Some(x)))?;
+                state = new_state;
+                let ident = match ident {
+                    Some(IdentifierType::Identifier((i, _))) => {
+                        Some(IdentifierType::Identifier((i, Some(t))))
+                    }
+                    _ => return Err("Invalid let statement".to_string()),
+                };
+            }
+            [Token::Assign(x), rest @ ..] => {
+                return Ok((ident.unwrap(), state.update(rest, Some(x))));
+            }
+            _ => {
+                return Err(format!(
+                    "Invalid let statement at {:?}\n {:?}",
+                    state,
+                    state.tokens.first().unwrap()
+                ))
+            }
+        }
+    }
+}
+
 fn process<'a>(state: State<'a>) -> ParserReturn<ASTNode> {
     let (node, new_state) = match &state.tokens {
         [] => (ASTNode::EOF, state),
@@ -163,7 +245,6 @@ fn process<'a>(state: State<'a>) -> ParserReturn<ASTNode> {
             let new_state = state.update(rest, Some(s));
             (ASTNode::NumberLiteral(take_value(s)), new_state)
         }
-        [Token::Import(_), rest @ ..] => parse_import(state.update(rest, None))?,
         [Token::LParen(x), rest @ ..] => parse_paren_expression(state.update(rest, Some(x)))?,
         [Token::LBrace(x), rest @ ..] => parse_brace_expression(state.update(rest, Some(x)))?,
         [Token::LBracket(x), rest @ ..] => parse_array_literal(state.update(rest, Some(x)))?,
