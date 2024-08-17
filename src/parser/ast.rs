@@ -22,16 +22,15 @@ pub struct GoImport {
 #[derive(Debug)]
 pub struct Identifier {
     pub value: ASTString,
-    pub type_: Option<Type>,
+    pub mutable: bool,
 }
 
 #[derive(Debug)]
 pub enum IdentifierType {
-    Identifier(Identifier),
-    TypedIdentifier(Identifier),
-    ArrayDestructure(Vec<Identifier>),
-    RecordDestructure(Vec<Identifier>),
-    TupleDestructure(Vec<Identifier>),
+    Identifier((Identifier, Option<TypeDeclaration>)),
+    ArrayDestructure((Vec<Identifier>, Option<TypeDeclaration>)),
+    RecordDestructure((Vec<Identifier>, Option<TypeDeclaration>)),
+    TupleDestructure((Vec<Identifier>, Option<TypeDeclaration>)),
 }
 
 // Types
@@ -74,7 +73,7 @@ pub struct RecordLiteral {
 
 #[derive(Debug)]
 pub struct LetExpression {
-    pub identifier: Identifier,
+    pub identifier: IdentifierType,
     pub value: Box<ASTNode>,
 }
 
