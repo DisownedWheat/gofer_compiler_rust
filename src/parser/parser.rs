@@ -268,12 +268,10 @@ fn parse_function(state: State) -> ParserReturn<ASTNode> {
 
     match state.tokens {
         [Token::Identifier(_), Token::LParen(t), rest @ ..] => {
-            todo!("Actually parse function");
+            todo!("Actually parse named function");
             Ok((ASTNode::NoOp, state.update(rest, Some(t))))
         }
-        [Token::LParen(_), rest @ ..] => parse_struct_method_definition(state.update(rest, None))
-            .map(|(t, new_state)| (ASTNode::StructMethodDefinition(t), new_state)),
-        _ => todo!("parse_function"),
+        _ => todo!("parse anonymous function"),
     }
 }
 
