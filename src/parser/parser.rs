@@ -61,6 +61,7 @@ fn ignore_newlines(tokens: &[Token]) -> &[Token] {
 
 fn parse_top_level<'a>(mut state: State<'a>) -> Result<(Vec<ASTNode>, State<'a>), String> {
     let mut vec = Vec::<ASTNode>::new();
+    let mut is_pub = false;
     loop {
         println!("{:?}", vec);
         if state.tokens.is_empty() {
@@ -69,6 +70,9 @@ fn parse_top_level<'a>(mut state: State<'a>) -> Result<(Vec<ASTNode>, State<'a>)
         match state.tokens {
             [Token::EOF(_)] => break,
             [Token::Import(_), rest @ ..] => {
+                if is_pub {
+                    return Err("Cannot have a public import".to_string());
+                }
                 let (node, new_state) = parse_import(state.update(rest, None))?;
                 state = new_state;
                 vec.push(node);
@@ -79,17 +83,21 @@ fn parse_top_level<'a>(mut state: State<'a>) -> Result<(Vec<ASTNode>, State<'a>)
                 continue;
             }
             [Token::Pub(x), rest @ ..] => {
-                let (node, new_state) = process(state.update(rest, Some(x)))?;
-                state = new_state;
-                vec.push(ASTNode::TopLevel(true, Box::new(node)));
-                continue;
+                if is_pub {
+                    return Err("Cannot have multiple public declarations".to_string());
+                }
+                is_pub = true;
+                state = state.update(rest, Some(x));
+                // let (node, new_state) = process(state.update(rest, Some(x)))?;
+                // state = new_state;
+                // vec.push(ASTNode::TopLevel(true, Box::new(node)));
             }
-            [Token::Function(x), i @ Token::Identifier(_), rest @ ..] => {
-                let mut re_built: Vec<Token> = vec![*i];
-                ignore_newlines(rest)
-                    .into_iter()
-                    .for_each(|x| re_built.push(*x));
-                let (node, new_state) = parse_function(state.update(&re_built[..], Some(x)))?;
+            [Token::Function(x), Token::Identifier(_), ..] => {
+                let new_tokens = &state.tokens[1..];
+                let (node, new_state) = parse_function(state.update(new_tokens, Some(x)))?;
+                state = new_state;
+                vec.push(ASTNode::TopLevel(is_pub, Box::new(node)));
+                is_pub = false;
             }
             _ => {
                 let (node, new_state) = process(state)?;
@@ -302,7 +310,7 @@ fn parse_function_args<'a>(state: State<'a>) -> Result<(Vec<FunctionArgument>, S
 
 fn parse_type_literal(state: State) -> Result<(TypeDeclaration, State), String> {
     let (is_slice, state) = match state.tokens {
-        [Token::LBracket(_), rest @ ..] => (true, state.update(rest, None)),
+        [Token::LBracket(_), Token::RBracket(_), rest @ ..] => (true, state.update(rest, None)),
         _ => (false, state),
     };
 
@@ -312,7 +320,7 @@ fn parse_type_literal(state: State) -> Result<(TypeDeclaration, State), String> 
     };
 
     match state.tokens {
-        [Token::Identifier(t), Token::Colon(_), Token::Identifier(t2), rest @ ..] => {
+        [Token::Identifier(t), Token::Dot(_), Token::Identifier(t2), rest @ ..] => {
             let type_ = TypeDeclaration {
                 module: Some(t.value.clone()),
                 name: t2.value.clone(),
