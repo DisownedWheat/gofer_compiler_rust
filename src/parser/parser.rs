@@ -121,14 +121,14 @@ fn internal_parse<'a>(
         match delim {
             Delimiter::Func(ref f) => {
                 if f(state.tokens) {
-                    state.tokens = &state.tokens[1..];
-                    return Ok((vec, state));
+                    let tokens = &state.tokens[1..];
+                    return Ok((vec, state.update(tokens, None)));
                 }
             }
             _ => (),
         }
 
-        match process(state) {
+        match parse_statement(state) {
             Ok((new_node, new_state)) => {
                 state = new_state;
                 vec.push(new_node);
@@ -141,13 +141,6 @@ fn internal_parse<'a>(
 
 fn take_value(token: &TokenValue) -> ASTString {
     std::mem::take(&mut (*token.value).to_string())
-}
-
-fn make_node<F, T>(constructor: F, value: T, state: State) -> ParserReturn<ASTNode>
-where
-    F: Fn(T) -> ASTNode,
-{
-    Ok((constructor(value), state))
 }
 
 fn parse_statement<'a>(state: State<'a>) -> ParserReturn<ASTNode> {
@@ -187,7 +180,7 @@ fn parse_left_let_statement<'a>(mut state: State<'a>) -> ParserReturn<Identifier
     match state.tokens {
         [Token::Identifier(n), rest @ ..] => {
             let new_state = state.update(rest, Some(n));
-            let ident = Some(IdentifierType::Identifier((
+            ident = Some(IdentifierType::Identifier((
                 Identifier {
                     value: take_value(n),
                     mutable: is_mut,
@@ -198,12 +191,86 @@ fn parse_left_let_statement<'a>(mut state: State<'a>) -> ParserReturn<Identifier
         }
         [Token::LParen(x), rest @ ..] => {
             state = state.update(rest, Some(x));
+            let mut idents: Vec<Identifier> = vec![];
             loop {
-                match state.tokens {}
+                match state.tokens {
+                    [Token::RParen(x), rest @ ..] => {
+                        state = state.update(rest, Some(x));
+                        ident = Some(IdentifierType::TupleDestructure((idents, None)));
+                        break;
+                    }
+                    [Token::Comma(x), rest @ ..] => {
+                        state = state.update(rest, Some(x));
+                        continue;
+                    }
+                    [Token::Identifier(n), rest @ ..] => {
+                        let new_state = state.update(rest, Some(n));
+                        let ident = Identifier {
+                            value: take_value(n),
+                            mutable: is_mut,
+                        };
+                        idents.push(ident);
+                        state = new_state;
+                    }
+                    _ => return Err("Invalid let statement".to_string()),
+                }
             }
         }
-        [Token::LBrace(x), rest @ ..] => {}
-        [Token::LBracket(x), rest @ ..] => {}
+        [Token::LBrace(x), rest @ ..] => {
+            state = state.update(rest, Some(x));
+            let mut idents: Vec<Identifier> = vec![];
+            loop {
+                match state.tokens {
+                    [Token::RBrace(x), rest @ ..] => {
+                        state = state.update(rest, Some(x));
+                        ident = Some(IdentifierType::RecordDestructure((idents, None)));
+                        break;
+                    }
+                    [Token::Comma(x), rest @ ..] => {
+                        state = state.update(rest, Some(x));
+                        continue;
+                    }
+                    [Token::Identifier(n), rest @ ..] => {
+                        let new_state = state.update(rest, Some(n));
+                        let ident = Identifier {
+                            value: take_value(n),
+                            mutable: is_mut,
+                        };
+                        idents.push(ident);
+                        state = new_state;
+                    }
+                    _ => return Err("Invalid let statement".to_string()),
+                }
+            }
+        }
+        [Token::LBracket(x), rest @ ..] => {
+            state = state.update(rest, Some(x));
+            let mut idents: Vec<Identifier> = vec![];
+            loop {
+                match state.tokens {
+                    [Token::RBracket(x), rest @ ..] => {
+                        state = state.update(rest, Some(x));
+                        ident = Some(IdentifierType::ArrayDestructure((idents, None)));
+                        break;
+                    }
+                    [Token::Comma(x), rest @ ..] => {
+                        state = state.update(rest, Some(x));
+                        continue;
+                    }
+                    [Token::Identifier(n), rest @ ..] => {
+                        let new_state = state.update(rest, Some(n));
+                        let ident = Identifier {
+                            value: take_value(n),
+                            mutable: is_mut,
+                        };
+                        idents.push(ident);
+                        state = new_state;
+                    }
+                    _ => return Err("Invalid let statement".to_string()),
+                }
+            }
+        }
+        _ => return Err("Invalid let statement".to_string()),
     };
 
     loop {
@@ -211,7 +278,7 @@ fn parse_left_let_statement<'a>(mut state: State<'a>) -> ParserReturn<Identifier
             [Token::Colon(x), rest @ ..] => {
                 let (t, new_state) = parse_type_literal(state.update(rest, Some(x)))?;
                 state = new_state;
-                let ident = match ident {
+                ident = match ident {
                     Some(IdentifierType::Identifier((i, _))) => {
                         Some(IdentifierType::Identifier((i, Some(t))))
                     }
