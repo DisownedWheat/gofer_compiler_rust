@@ -54,7 +54,7 @@ pub enum Token {
     Range(TokenValue),
     Comment(TokenValue),
     ReturnType(TokenValue),
-    Enum(TokenValue),
+    EnumKeyword(TokenValue),
     Interface(TokenValue),
     Whitespace(TokenValue),
     ErrorToken(TokenValue),

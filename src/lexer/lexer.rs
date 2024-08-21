@@ -307,7 +307,7 @@ fn parse_buffer(mut state: Lexer) -> Lexer {
                 state = build_token(state, |t| Token::False(t), collected);
             }
             "enum" => {
-                state = build_token(state, |t| Token::Enum(t), collected);
+                state = build_token(state, |t| Token::EnumKeyword(t), collected);
             }
             "interface" => {
                 state = build_token(state, |t| Token::Interface(t), collected);

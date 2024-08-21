@@ -106,7 +106,7 @@ fn parse_top_level<'a>(mut state: State<'a>) -> Result<(Vec<ASTNode>, State<'a>)
                 vec.push(ASTNode::TopLevel(is_pub, Box::new(node)));
                 is_pub = false;
             }
-            [Token::Enum(_), Token::Identifier(name), Token::LBrace(_), rest @ ..] => {
+            [Token::EnumKeyword(_), Token::Identifier(name), Token::LBrace(_), rest @ ..] => {
                 let (node, new_state) = parse_enum(state.update(rest, Some(name)))?;
                 state = new_state;
                 let wrapped = ASTNode::Enum(node);
