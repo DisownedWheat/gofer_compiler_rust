@@ -99,9 +99,9 @@ fn parse_top_level<'a>(mut state: State<'a>) -> Result<(Vec<ASTNode>, State<'a>)
                 vec.push(ASTNode::TopLevel(is_pub, Box::new(node)));
                 is_pub = false;
             }
-            [Token::TypeKeyword(x), rest @ ..] => {
+            [Token::TypeKeyword(x), Token::Identifier(tok), Token::Assign(_), rest @ ..] => {
                 let new_state = state.update(rest, Some(x));
-                let (node, new_state) = parse_type_definition(new_state)?;
+                let (node, new_state) = parse_type_definition(tok.value.clone(), new_state)?;
                 state = new_state;
                 vec.push(ASTNode::TopLevel(is_pub, Box::new(node)));
                 is_pub = false;
@@ -505,15 +505,15 @@ fn parse_type_literal(state: State) -> Result<(Type, State), String> {
     }
 }
 
-fn parse_type_definition(state: State) -> ParserReturn<ASTNode> {
+fn parse_type_definition(name: String, state: State) -> ParserReturn<ASTNode> {
     match state.tokens {
         [Token::LBrace(x), rest @ ..] => {
             let (t, new_state) = parse_record_type(state.update(rest, Some(x)))?;
-            Ok((ASTNode::TypeDef(t), new_state))
+            Ok((ASTNode::TypeDef((name, t)), new_state))
         }
         _ => {
             let (type_, new_state) = parse_type_literal(state)?;
-            Ok((ASTNode::TypeDef(TypeDef::Type(type_)), new_state))
+            Ok((ASTNode::TypeDef((name, TypeDef::Type(type_))), new_state))
         }
     }
 }

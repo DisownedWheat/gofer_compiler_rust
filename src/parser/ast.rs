@@ -133,7 +133,7 @@ pub enum ASTNode {
     NumberLiteral(ASTString),
     Enum(Enum),
     Tuple(Tuple),
-    TypeDef(TypeDef),
+    TypeDef((String, TypeDef)),
     TopLevel(bool, Box<ASTNode>),
     NoOp,
     EOF,
