@@ -99,6 +99,19 @@ fn parse_top_level<'a>(mut state: State<'a>) -> Result<(Vec<ASTNode>, State<'a>)
                 vec.push(ASTNode::TopLevel(is_pub, Box::new(node)));
                 is_pub = false;
             }
+            [Token::TypeKeyword(x), rest @ ..] => {
+                let new_state = state.update(rest, Some(x));
+                let (node, new_state) = parse_type_definition(new_state)?;
+                state = new_state;
+                vec.push(ASTNode::TopLevel(is_pub, Box::new(node)));
+                is_pub = false;
+            }
+            [Token::Enum(_), Token::Identifier(name), Token::LBrace(_), rest @ ..] => {
+                let (node, new_state) = parse_enum(state.update(rest, Some(name)))?;
+                state = new_state;
+                let wrapped = ASTNode::Enum(node);
+                vec.push(ASTNode::TopLevel(is_pub, Box::new(wrapped)));
+            }
             _ => {
                 let (node, new_state) = process(state)?;
                 state = new_state;
@@ -454,7 +467,7 @@ fn parse_function_args<'a>(state: State<'a>) -> Result<(Vec<FunctionArgument>, S
     }
 }
 
-fn parse_type_literal(state: State) -> Result<(TypeDeclaration, State), String> {
+fn parse_type_literal(state: State) -> Result<(Type, State), String> {
     let (is_slice, state) = match state.tokens {
         [Token::LBracket(_), Token::RBracket(_), rest @ ..] => (true, state.update(rest, None)),
         _ => (false, state),
@@ -467,7 +480,7 @@ fn parse_type_literal(state: State) -> Result<(TypeDeclaration, State), String> 
 
     match state.tokens {
         [Token::Identifier(t), Token::Dot(_), Token::Identifier(t2), rest @ ..] => {
-            let type_ = TypeDeclaration {
+            let type_ = Type {
                 module: Some(t.value.clone()),
                 name: t2.value.clone(),
                 pointer: is_pointer,
@@ -476,7 +489,7 @@ fn parse_type_literal(state: State) -> Result<(TypeDeclaration, State), String> 
             Ok((type_, state.update(rest, Some(t2))))
         }
         [Token::Identifier(t), rest @ ..] => {
-            let type_ = TypeDeclaration {
+            let type_ = Type {
                 module: None,
                 name: t.value.clone(),
                 pointer: is_pointer,
@@ -492,4 +505,49 @@ fn parse_type_literal(state: State) -> Result<(TypeDeclaration, State), String> 
     }
 }
 
-// fn parse_type_definition(state: State) -> ParserReturn<TypeDeclaration>
+fn parse_type_definition(state: State) -> ParserReturn<ASTNode> {
+    match state.tokens {
+        [Token::LBrace(x), rest @ ..] => {
+            let (t, new_state) = parse_record_type(state.update(rest, Some(x)))?;
+            Ok((ASTNode::TypeDef(t), new_state))
+        }
+        _ => {
+            let (type_, new_state) = parse_type_literal(state)?;
+            Ok((ASTNode::TypeDef(TypeDef::Type(type_)), new_state))
+        }
+    }
+}
+
+fn parse_record_type(mut state: State) -> ParserReturn<TypeDef> {
+    let mut fields: Vec<RecordDefinitionField> = vec![];
+    let mut check_for_comma = false;
+    loop {
+        match (check_for_comma, state.tokens) {
+            (_, [Token::RBrace(x), rest @ ..]) => {
+                state = state.update(rest, Some(x));
+                let record = RecordDefinition { fields };
+                return Ok((TypeDef::RecordDefinition(record), state));
+            }
+            (false, [Token::Identifier(name), Token::Colon(_), rest @ ..]) => {
+                let (type_, new_state) = parse_type_literal(state.update(rest, Some(name)))?;
+                let field = RecordDefinitionField {
+                    name: take_value(name),
+                    type_: TypeDef::Type(type_),
+                };
+                fields.push(field);
+                state = new_state;
+                check_for_comma = true;
+            }
+            (true, [Token::Comma(x), rest @ ..]) => {
+                state = state.update(rest, Some(x));
+                check_for_comma = false;
+            }
+            _ => return Err("Invalid record type".to_string()),
+        }
+    }
+}
+
+fn parse_enum(mut state: State) -> ParserReturn<Enum> {
+    let mut fields: Vec<Type> = vec![];
+    todo!("parse_enum")
+}

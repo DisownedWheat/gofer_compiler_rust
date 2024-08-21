@@ -2,7 +2,7 @@
 
 pub type ASTString = String;
 pub type LogicBlock = Vec<ASTNode>;
-pub type StructMethodDefinition = (ASTString, TypeDeclaration);
+pub type StructMethodDefinition = (ASTString, Type);
 pub type ASTNodeIndex = usize;
 
 // Imports
@@ -27,32 +27,34 @@ pub struct Identifier {
 
 #[derive(Debug)]
 pub enum IdentifierType {
-    Identifier((Identifier, Option<TypeDeclaration>)),
-    ArrayDestructure((Vec<Identifier>, Option<TypeDeclaration>)),
-    RecordDestructure((Vec<Identifier>, Option<TypeDeclaration>)),
-    TupleDestructure((Vec<Identifier>, Option<TypeDeclaration>)),
+    Identifier((Identifier, Option<Type>)),
+    ArrayDestructure((Vec<Identifier>, Option<Type>)),
+    RecordDestructure((Vec<Identifier>, Option<Type>)),
+    TupleDestructure((Vec<Identifier>, Option<Type>)),
 }
 
 // Types
-#[derive(Debug)]
-pub struct Type {
-    pub module: Option<ASTString>,
-    pub value: ASTString,
-}
 
 #[derive(Debug)]
-pub struct TypeDeclaration {
+pub struct Type {
     pub name: ASTString,
     pub module: Option<ASTString>,
     pub pointer: bool,
     pub slice: bool,
 }
 
+#[derive(Debug)]
+pub enum TypeDef {
+    Type(Type),
+    Enum(Enum),
+    RecordDefinition(RecordDefinition),
+}
+
 // Records
 #[derive(Debug)]
 pub struct RecordDefinitionField {
     pub name: ASTString,
-    pub type_: Type,
+    pub type_: TypeDef,
 }
 
 #[derive(Debug)]
@@ -64,6 +66,7 @@ pub struct RecordDefinition {
 pub struct RecordField {
     pub name: ASTString,
     pub value: ASTNode,
+    pub public: bool,
 }
 
 #[derive(Debug)]
@@ -97,28 +100,20 @@ pub struct FunctionDefinition {
 #[derive(Debug)]
 pub struct Tuple {
     length: usize,
-    values: Vec<TypeDeclaration>,
-}
-
-#[derive(Debug)]
-pub enum EnumBody {
-    Tuple(Tuple),
-    Type(TypeDeclaration),
-    String(ASTString),
-    Number(ASTString),
+    values: Vec<Type>,
 }
 
 #[derive(Debug)]
 pub struct Enum {
     pub name: ASTString,
-    fields: Vec<(String, EnumBody)>,
+    fields: Vec<(String, Option<Type>)>,
 }
 
 #[derive(Debug)]
 pub enum TopLevel {
     FunctionDefinition((bool, FunctionDefinition)),
     StructMethodDefinition((bool, FunctionDefinition)),
-    RecordDefinition(RecordDefinition),
+    TypeDef((bool, TypeDef)),
 }
 
 #[derive(Debug)]
@@ -138,6 +133,7 @@ pub enum ASTNode {
     NumberLiteral(ASTString),
     Enum(Enum),
     Tuple(Tuple),
+    TypeDef(TypeDef),
     TopLevel(bool, Box<ASTNode>),
     NoOp,
     EOF,
