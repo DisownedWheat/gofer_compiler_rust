@@ -2,8 +2,7 @@
 
 pub type ASTString = String;
 pub type LogicBlock = Vec<ASTNode>;
-pub type StructMethodDefinition = (ASTString, Type);
-pub type ASTNodeIndex = usize;
+pub type TokenPosition = (usize, usize);
 
 // Imports
 #[derive(Debug)]
@@ -46,7 +45,7 @@ pub struct Type {
 #[derive(Debug)]
 pub enum TypeDef {
     Type(Type),
-    Enum(Enum),
+    EnumDefinition(EnumDefiniton),
     RecordDefinition(RecordDefinition),
 }
 
@@ -104,15 +103,15 @@ pub struct Tuple {
 }
 
 #[derive(Debug)]
-pub struct Enum {
-    pub name: ASTString,
-    fields: Vec<(String, Option<Type>)>,
+pub struct EnumDefiniton {
+    // pub name: ASTString,
+    pub fields: Vec<(ASTString, Option<Type>)>,
 }
 
 #[derive(Debug)]
 pub enum TopLevel {
     FunctionDefinition((bool, FunctionDefinition)),
-    StructMethodDefinition((bool, FunctionDefinition)),
+    StructMethodDefinition((bool, ASTString, FunctionDefinition)),
     TypeDef((bool, TypeDef)),
 }
 
@@ -131,9 +130,9 @@ pub enum ASTNode {
     ArrayLiteral(Vec<ASTNode>),
     StringLiteral(ASTString),
     NumberLiteral(ASTString),
-    Enum(Enum),
+    Enum(EnumDefiniton),
     Tuple(Tuple),
-    TypeDef((String, TypeDef)),
+    TypeDef((ASTString, TypeDef)),
     TopLevel(bool, Box<ASTNode>),
     NoOp,
     EOF,

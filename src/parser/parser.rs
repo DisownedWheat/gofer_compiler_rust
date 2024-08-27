@@ -88,9 +88,16 @@ fn parse_top_level<'a>(mut state: State<'a>) -> Result<(Vec<ASTNode>, State<'a>)
                 }
                 is_pub = true;
                 state = state.update(rest, Some(x));
-                // let (node, new_state) = process(state.update(rest, Some(x)))?;
-                // state = new_state;
-                // vec.push(ASTNode::TopLevel(true, Box::new(node)));
+            }
+            [Token::Function(_), Token::LParen(x), rest @ ..] => {
+                let new_state = state.update(rest, Some(x));
+                let ((name, function), new_state) = parse_struct_method_definition(new_state)?;
+                state = new_state;
+                vec.push(ASTNode::TopLevel((
+                    is_pub,
+                    name,
+                    Box::new(ASTNode::FunctionDefinition(function)),
+                )));
             }
             [Token::Function(x), Token::Identifier(_), ..] => {
                 let new_tokens = &state.tokens[1..];
@@ -331,9 +338,6 @@ fn process<'a>(state: State<'a>) -> ParserReturn<ASTNode> {
         [Token::Function(x) | Token::Let(x), rest @ ..] => {
             parse_function(state.update(rest, Some(x)))?
         }
-        [Token::TypeKeyword(x), Token::Identifier(ident), Token::Assign(_), rest @ ..] => {
-            todo!("parse types")
-        }
         _ => Err(format!(
             "Not implemented: {:?}",
             state.tokens.first().unwrap()
@@ -436,7 +440,7 @@ fn parse_function(state: State) -> ParserReturn<ASTNode> {
     }
 }
 
-fn parse_struct_method_definition(state: State) -> ParserReturn<StructMethodDefinition> {
+fn parse_struct_method_definition(state: State) -> ParserReturn<(ASTString, FunctionDefinition)> {
     match state.tokens {
         [Token::Identifier(t), rest @ ..] => {
             let (type_, new_state) = parse_type_literal(state)?;
@@ -444,7 +448,10 @@ fn parse_struct_method_definition(state: State) -> ParserReturn<StructMethodDefi
                 [Token::RParen(x), rest @ ..] => new_state.update(rest, Some(x)),
                 _ => new_state,
             };
-            return Ok(((take_value(t), type_), new_state));
+            return Ok((
+                TopLevel::StructMethodDefinition((take_value(t), type_)),
+                new_state,
+            ));
         }
         _ => Err(format!(
             "Invalid struct method definition at {:?}\n {:?}",
@@ -505,7 +512,7 @@ fn parse_type_literal(state: State) -> Result<(Type, State), String> {
     }
 }
 
-fn parse_type_definition(name: String, state: State) -> ParserReturn<ASTNode> {
+fn parse_type_definition(name: ASTString, state: State) -> ParserReturn<ASTNode> {
     match state.tokens {
         [Token::LBrace(x), rest @ ..] => {
             let (t, new_state) = parse_record_type(state.update(rest, Some(x)))?;
@@ -513,7 +520,10 @@ fn parse_type_definition(name: String, state: State) -> ParserReturn<ASTNode> {
         }
         _ => {
             let (type_, new_state) = parse_type_literal(state)?;
-            Ok((ASTNode::TypeDef((name, TypeDef::Type(type_))), new_state))
+            Ok((
+                ASTNode::TypeDef((name.clone(), TypeDef::Type(type_))),
+                new_state,
+            ))
         }
     }
 }
@@ -547,7 +557,26 @@ fn parse_record_type(mut state: State) -> ParserReturn<TypeDef> {
     }
 }
 
-fn parse_enum(mut state: State) -> ParserReturn<Enum> {
-    let mut fields: Vec<Type> = vec![];
-    todo!("parse_enum")
+fn parse_enum(mut state: State) -> ParserReturn<EnumDefiniton> {
+    let mut fields: Vec<(ASTString, Option<Type>)> = vec![];
+    let mut comma_check = false;
+    loop {
+        match (comma_check, state.tokens) {
+            (_, [Token::RBrace(x), rest @ ..]) => {
+                state = state.update(rest, Some(x));
+                return Ok((EnumDefiniton { fields }, state));
+            }
+            (false, [Token::Identifier(name), Token::LParen(_), rest @ ..]) => {
+                let (type_, new_state) = parse_type_literal(state.update(rest, Some(name)))?;
+                fields.push((take_value(name), Some(type_)));
+                state = new_state;
+                comma_check = true;
+            }
+            (false, [Token::Identifier(name), Token::Comma(x), rest @ ..]) => {
+                fields.push((take_value(name), None));
+                state = state.update(rest, Some(x));
+            }
+            _ => return Err("Invalid enum type".to_string()),
+        }
+    }
 }
