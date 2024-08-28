@@ -1,4 +1,6 @@
-use super::tokens::{Token, TokenValue};
+use super::logos_lexer::Token;
+use super::tokens::TokenValue;
+use logos::Logos;
 
 struct Lexer {
     tokens: Vec<Token>,
@@ -19,16 +21,27 @@ impl Lexer {
 }
 
 pub fn lex(file_path: String) -> Vec<Token> {
-    std::fs::read_to_string(file_path)
-        .unwrap()
-        .as_str()
-        .chars()
-        .into_iter()
-        .fold(Ok(Lexer::new()), |acc, c| {
-            acc.map(|state| f_inner(state, c))?
+    let input = std::fs::read_to_string(file_path).unwrap();
+    let input_str = input.as_str();
+    let lexer = Token::lexer(input_str);
+    lexer
+        .filter_map(|t| {
+            if t.is_err() {
+                println!("Error: {:?}", t);
+                None
+            } else {
+                Some(t)
+            }
         })
-        .expect("Error")
-        .tokens
+        .map(|t| t.unwrap())
+        .collect::<Vec<Token>>()
+    // .chars()
+    // .into_iter()
+    // .fold(Ok(Lexer::new()), |acc, c| {
+    //     acc.map(|state| f_inner(state, c))?
+    // })
+    // .expect("Error")
+    // .tokens
 }
 
 fn f_inner(mut state: Lexer, c: char) -> Result<Lexer, String> {

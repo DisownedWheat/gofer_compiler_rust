@@ -1,5 +1,6 @@
 use super::ast::*;
-use crate::lexer::tokens::{Token, TokenValue};
+use crate::lexer::logos_lexer::Token;
+use crate::lexer::tokens::TokenValue;
 
 // Line, column
 #[derive(Debug)]
@@ -48,17 +49,6 @@ pub fn parse(tokens: Vec<Token>) -> Result<ASTNode, String> {
     }
 }
 
-fn ignore_newlines(tokens: &[Token]) -> &[Token] {
-    let mut index = 0;
-    loop {
-        match tokens[index] {
-            Token::NewLine(_) => index += 1,
-            _ => break,
-        }
-    }
-    &tokens[index..]
-}
-
 fn parse_top_level<'a>(mut state: State<'a>) -> Result<(Vec<ASTNode>, State<'a>), String> {
     let mut vec = Vec::<ASTNode>::new();
     let mut is_pub = false;
@@ -76,10 +66,6 @@ fn parse_top_level<'a>(mut state: State<'a>) -> Result<(Vec<ASTNode>, State<'a>)
                 let (node, new_state) = parse_import(state.update(rest, None))?;
                 state = new_state;
                 vec.push(node);
-                continue;
-            }
-            [Token::NewLine(_), rest @ ..] => {
-                state = state.update(rest, None);
                 continue;
             }
             [Token::Pub(x), rest @ ..] => {
@@ -323,7 +309,6 @@ fn process<'a>(state: State<'a>) -> ParserReturn<ASTNode> {
     let (node, new_state) = match &state.tokens {
         [] => (ASTNode::EOF, state),
         [Token::EOF(_), rest @ ..] => (ASTNode::EOF, state.update(rest, None)),
-        [Token::NewLine(_), rest @ ..] => (ASTNode::NoOp, state.update(rest, None)),
         [Token::String(s), rest @ ..] => (
             ASTNode::StringLiteral(take_value(s)),
             state.update(rest, Some(s)),
@@ -397,21 +382,21 @@ fn parse_array_literal(state: State) -> ParserReturn<ASTNode> {
 
 fn parse_import(state: State) -> ParserReturn<ASTNode> {
     match state.tokens {
-        [Token::String(s), Token::NewLine(_), rest @ ..] => Ok((
+        [Token::String(s), rest @ ..] => Ok((
             ASTNode::GoImport(GoImport {
                 module: s.value.clone(),
                 alias: None,
             }),
             state.update(rest, Some(s)),
         )),
-        [Token::Identifier(t), Token::String(s), Token::NewLine(_), rest @ ..] => Ok((
+        [Token::Identifier(t), Token::String(s), rest @ ..] => Ok((
             ASTNode::GoImport(GoImport {
                 module: s.value.clone(),
                 alias: Some(t.value.clone()),
             }),
             state.update(rest, Some(s)),
         )),
-        [Token::Identifier(t), Token::NewLine(_), rest @ ..] => Ok((
+        [Token::Identifier(t), rest @ ..] => Ok((
             ASTNode::GoferImport(GoferImport {
                 module: t.value.clone(),
             }),

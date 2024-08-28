@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Default)]
 pub struct TokenValue {
     pub value: String,
     pub line: usize,
@@ -6,7 +6,7 @@ pub struct TokenValue {
 }
 
 #[derive(Debug)]
-pub enum Token {
+pub enum TokenOld {
     Number(TokenValue),
     Let(TokenValue),
     Import(TokenValue),

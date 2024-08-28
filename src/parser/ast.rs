@@ -111,7 +111,7 @@ pub struct EnumDefiniton {
 #[derive(Debug)]
 pub enum TopLevel {
     FunctionDefinition((bool, FunctionDefinition)),
-    StructMethodDefinition((bool, ASTString, FunctionDefinition)),
+    StructMethodDefinition(bool, ASTString, FunctionDefinition),
     TypeDef((bool, TypeDef)),
 }
 
@@ -133,7 +133,7 @@ pub enum ASTNode {
     Enum(EnumDefiniton),
     Tuple(Tuple),
     TypeDef((ASTString, TypeDef)),
-    TopLevel(bool, Box<ASTNode>),
+    TopLevel(bool, Box<TopLevel>),
     NoOp,
     EOF,
 }
