@@ -110,3 +110,18 @@ pub enum Token {
     #[token("interface", token_value_callback)]
     Interface(TokenValue),
 }
+
+#[derive(Debug)]
+pub enum LexerError {
+    InvalidToken,
+    FileNoteFound,
+}
+
+pub fn lex(file_path: &str) -> Result<Vec<Result<Token, ()>>, LexerError> {
+    let input = match std::fs::read_to_string(file_path) {
+        Ok(i) => i,
+        Err(_) => return Err(LexerError::FileNoteFound),
+    };
+    let lexer = Token::lexer(&input);
+    Ok(lexer.collect::<Vec<Result<Token, ()>>>())
+}
