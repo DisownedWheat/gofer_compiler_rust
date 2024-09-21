@@ -44,9 +44,9 @@ pub struct Type {
 
 #[derive(Debug)]
 pub enum TypeDef {
-    Type(Type),
-    EnumDefinition(EnumDefiniton),
-    RecordDefinition(RecordDefinition),
+    Type(ASTString, Type),
+    EnumDefinition(ASTString, EnumDefiniton),
+    RecordDefinition(ASTString, RecordDefinition),
 }
 
 // Records
@@ -112,7 +112,7 @@ pub struct EnumDefiniton {
 pub enum TopLevel {
     FunctionDefinition(FunctionDefinition),
     StructMethodDefinition(ASTString, FunctionDefinition),
-    TypeDef(TypeDef),
+    TopLevelTypeDef(TypeDef),
 }
 
 #[derive(Debug)]
@@ -132,7 +132,7 @@ pub enum ASTNode {
     NumberLiteral(ASTString),
     Enum(EnumDefiniton),
     Tuple(Tuple),
-    TypeDef((ASTString, TypeDef)),
+    TypeDefinition(TypeDef),
     TopLevel(bool, TopLevel),
     NoOp,
     EOF,

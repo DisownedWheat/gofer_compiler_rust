@@ -100,15 +100,16 @@ fn parse_top_level<'a>(mut state: State<'a>) -> Result<(Vec<ASTNode>, State<'a>)
                 let new_state = state.update(rest, Some(x));
                 let (node, new_state) = parse_type_definition(tok.value.clone(), new_state)?;
                 state = new_state;
-                vec.push(ASTNode::TopLevel(is_pub, TopLevel::TypeDef(node)));
+                vec.push(ASTNode::TopLevel(is_pub, TopLevel::TopLevelTypeDef(node)));
                 is_pub = false;
             }
             [Token::EnumKeyword(_), Token::Identifier(name), Token::LBrace(_), rest @ ..] => {
                 let (node, new_state) = parse_enum(state.update(rest, Some(name)))?;
+                let n = take_value(name);
                 state = new_state;
                 vec.push(ASTNode::TopLevel(
                     is_pub,
-                    TopLevel::TypeDef(TypeDef::EnumDefinition(node)),
+                    TopLevel::TopLevelTypeDef(TypeDef::EnumDefinition(n, node)),
                 ));
                 is_pub = false;
             }
@@ -444,12 +445,7 @@ fn parse_struct_method_definition(
                 [Token::RParen(x), rest @ ..] => new_state.update(rest, Some(x)),
                 _ => new_state,
             };
-            return Ok((
-                (take_value(t), FunctionDefinition{
-
-                })
-                new_state,
-            ));
+            todo!("parse_struct_method_definition")
         }
         _ => Err(format!(
             "Invalid struct method definition at {:?}\n {:?}",
@@ -514,19 +510,16 @@ fn parse_type_definition(name: ASTString, state: State) -> ParserReturn<TypeDef>
     match state.tokens {
         [Token::LBrace(x), rest @ ..] => {
             let (t, new_state) = parse_record_type(state.update(rest, Some(x)))?;
-            Ok((ASTNode::TypeDef((name, t)), new_state))
+            Ok((TypeDef::RecordDefinition(name, t), new_state))
         }
         _ => {
             let (type_, new_state) = parse_type_literal(state)?;
-            Ok((
-                ASTNode::TypeDef((name.clone(), TypeDef::Type(type_))),
-                new_state,
-            ))
+            Ok((TypeDef::Type(name.clone(), type_), new_state))
         }
     }
 }
 
-fn parse_record_type(mut state: State) -> ParserReturn<TypeDef> {
+fn parse_record_type(mut state: State) -> ParserReturn<RecordDefinition> {
     let mut fields: Vec<RecordDefinitionField> = vec![];
     let mut check_for_comma = false;
     loop {
@@ -534,13 +527,14 @@ fn parse_record_type(mut state: State) -> ParserReturn<TypeDef> {
             (_, [Token::RBrace(x), rest @ ..]) => {
                 state = state.update(rest, Some(x));
                 let record = RecordDefinition { fields };
-                return Ok((TypeDef::RecordDefinition(record), state));
+                return Ok((record, state));
             }
             (false, [Token::Identifier(name), Token::Colon(_), rest @ ..]) => {
                 let (type_, new_state) = parse_type_literal(state.update(rest, Some(name)))?;
+                let n = take_value(name);
                 let field = RecordDefinitionField {
-                    name: take_value(name),
-                    type_: TypeDef::Type(type_),
+                    name: n.clone(),
+                    type_: TypeDef::Type(n, type_),
                 };
                 fields.push(field);
                 state = new_state;
