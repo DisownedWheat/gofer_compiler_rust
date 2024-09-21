@@ -77,38 +77,46 @@ fn parse_top_level<'a>(mut state: State<'a>) -> Result<(Vec<ASTNode>, State<'a>)
             }
             [Token::Function(_), Token::LParen(x), rest @ ..] => {
                 let new_state = state.update(rest, Some(x));
-                let ((name, function), new_state) = parse_struct_method_definition(new_state)?;
+                let ((name, function), new_state) =
+                    parse_struct_method_definition(new_state, is_pub)?;
                 state = new_state;
-                vec.push(ASTNode::TopLevel((
+                vec.push(ASTNode::TopLevel(
                     is_pub,
-                    name,
-                    Box::new(ASTNode::FunctionDefinition(function)),
-                )));
+                    TopLevel::StructMethodDefinition(name, function),
+                ));
+                is_pub = false;
             }
             [Token::Function(x), Token::Identifier(_), ..] => {
                 let new_tokens = &state.tokens[1..];
                 let (node, new_state) = parse_function(state.update(new_tokens, Some(x)))?;
                 state = new_state;
-                vec.push(ASTNode::TopLevel(is_pub, Box::new(node)));
+                vec.push(ASTNode::TopLevel(
+                    is_pub,
+                    TopLevel::FunctionDefinition(node),
+                ));
                 is_pub = false;
             }
             [Token::TypeKeyword(x), Token::Identifier(tok), Token::Assign(_), rest @ ..] => {
                 let new_state = state.update(rest, Some(x));
                 let (node, new_state) = parse_type_definition(tok.value.clone(), new_state)?;
                 state = new_state;
-                vec.push(ASTNode::TopLevel(is_pub, Box::new(node)));
+                vec.push(ASTNode::TopLevel(is_pub, TopLevel::TypeDef(node)));
                 is_pub = false;
             }
             [Token::EnumKeyword(_), Token::Identifier(name), Token::LBrace(_), rest @ ..] => {
                 let (node, new_state) = parse_enum(state.update(rest, Some(name)))?;
                 state = new_state;
-                let wrapped = ASTNode::Enum(node);
-                vec.push(ASTNode::TopLevel(is_pub, Box::new(wrapped)));
+                vec.push(ASTNode::TopLevel(
+                    is_pub,
+                    TopLevel::TypeDef(TypeDef::EnumDefinition(node)),
+                ));
+                is_pub = false;
             }
             _ => {
-                let (node, new_state) = process(state)?;
-                state = new_state;
-                vec.push(ASTNode::TopLevel(false, Box::new(node)));
+                todo!("Is this necessary?");
+                // let (node, new_state) = process(state)?;
+                // state = new_state;
+                // vec.push(ASTNode::TopLevel(false, Box::new(node)));
             }
         }
     }
@@ -321,7 +329,8 @@ fn process<'a>(state: State<'a>) -> ParserReturn<ASTNode> {
         [Token::LBrace(x), rest @ ..] => parse_brace_expression(state.update(rest, Some(x)))?,
         [Token::LBracket(x), rest @ ..] => parse_array_literal(state.update(rest, Some(x)))?,
         [Token::Function(x) | Token::Let(x), rest @ ..] => {
-            parse_function(state.update(rest, Some(x)))?
+            parse_function(state.update(rest, Some(x)))
+                .map(|(f, s)| (ASTNode::FunctionDefinition(f), s))?
         }
         _ => Err(format!(
             "Not implemented: {:?}",
@@ -410,7 +419,7 @@ fn parse_import(state: State) -> ParserReturn<ASTNode> {
     }
 }
 
-fn parse_function(state: State) -> ParserReturn<ASTNode> {
+fn parse_function(state: State) -> ParserReturn<FunctionDefinition> {
     // let match_return_type = |state: State| match &state.tokens {
     //     [Token::ReturnType(_), tail @ ..] => Some(parse_type_literal(state.update(tail, None))),
     //     _ => None,
@@ -418,14 +427,16 @@ fn parse_function(state: State) -> ParserReturn<ASTNode> {
 
     match state.tokens {
         [Token::Identifier(_), Token::LParen(t), rest @ ..] => {
-            todo!("Actually parse named function");
-            Ok((ASTNode::NoOp, state.update(rest, Some(t))))
+            todo!("Actually parse named function")
         }
         _ => todo!("parse anonymous function"),
     }
 }
 
-fn parse_struct_method_definition(state: State) -> ParserReturn<(ASTString, FunctionDefinition)> {
+fn parse_struct_method_definition(
+    state: State,
+    is_pub: bool,
+) -> ParserReturn<(String, FunctionDefinition)> {
     match state.tokens {
         [Token::Identifier(t), rest @ ..] => {
             let (type_, new_state) = parse_type_literal(state)?;
@@ -434,7 +445,9 @@ fn parse_struct_method_definition(state: State) -> ParserReturn<(ASTString, Func
                 _ => new_state,
             };
             return Ok((
-                TopLevel::StructMethodDefinition((take_value(t), type_)),
+                (take_value(t), FunctionDefinition{
+
+                })
                 new_state,
             ));
         }
@@ -497,7 +510,7 @@ fn parse_type_literal(state: State) -> Result<(Type, State), String> {
     }
 }
 
-fn parse_type_definition(name: ASTString, state: State) -> ParserReturn<ASTNode> {
+fn parse_type_definition(name: ASTString, state: State) -> ParserReturn<TypeDef> {
     match state.tokens {
         [Token::LBrace(x), rest @ ..] => {
             let (t, new_state) = parse_record_type(state.update(rest, Some(x)))?;
