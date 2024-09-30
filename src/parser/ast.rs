@@ -54,6 +54,7 @@ pub enum TypeDef {
 pub struct RecordDefinitionField {
     pub name: ASTString,
     pub type_: TypeDef,
+    pub mutable: bool,
 }
 
 #[derive(Debug)]

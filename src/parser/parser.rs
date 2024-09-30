@@ -77,8 +77,7 @@ fn parse_top_level<'a>(mut state: State<'a>) -> Result<(Vec<ASTNode>, State<'a>)
             }
             [Token::Function(_), Token::LParen(x), rest @ ..] => {
                 let new_state = state.update(rest, Some(x));
-                let ((name, function), new_state) =
-                    parse_struct_method_definition(new_state, is_pub)?;
+                let ((name, function), new_state) = parse_struct_method_definition(new_state)?;
                 state = new_state;
                 vec.push(ASTNode::TopLevel(
                     is_pub,
@@ -434,10 +433,20 @@ fn parse_function(state: State) -> ParserReturn<FunctionDefinition> {
     }
 }
 
-fn parse_struct_method_definition(
-    state: State,
-    is_pub: bool,
-) -> ParserReturn<(String, FunctionDefinition)> {
+fn parse_function_args<'a>(state: State<'a>) -> Result<(Vec<FunctionArgument>, State<'a>), String> {
+    let mut previous_was_comma = false;
+    let mut mutable = false;
+    let mut args = vec![];
+    loop {
+        match (state.tokens, (previous_was_comma || args.len() < 1)) {
+            ([], _) => return Err(format!("Invalid function args at {:?}\n", state)),
+            ([Token::RParen(x), rest @ ..], _) => return Ok((args, state.update(rest, Some(x)))),
+            _ => todo!("parse_function_args"),
+        }
+    }
+}
+
+fn parse_struct_method_definition(state: State) -> ParserReturn<(String, FunctionDefinition)> {
     match state.tokens {
         [Token::Identifier(t), rest @ ..] => {
             let (type_, new_state) = parse_type_literal(state)?;
@@ -452,19 +461,6 @@ fn parse_struct_method_definition(
             state,
             state.tokens.first().unwrap()
         )),
-    }
-}
-
-fn parse_function_args<'a>(state: State<'a>) -> Result<(Vec<FunctionArgument>, State<'a>), String> {
-    let mut previous_was_comma = false;
-    let mut mutable = false;
-    let mut args = vec![];
-    loop {
-        match (state.tokens, (previous_was_comma || args.len() < 1)) {
-            ([], _) => return Err(format!("Invalid function args at {:?}\n", state)),
-            ([Token::RParen(x), rest @ ..], _) => return Ok((args, state.update(rest, Some(x)))),
-            _ => todo!("parse_function_args"),
-        }
     }
 }
 
@@ -523,6 +519,8 @@ fn parse_record_type(mut state: State) -> ParserReturn<RecordDefinition> {
     let mut fields: Vec<RecordDefinitionField> = vec![];
     let mut check_for_comma = false;
     loop {
+        println!("{:?}", fields);
+        println!("{:?}", &state.tokens[..5]);
         match (check_for_comma, state.tokens) {
             (_, [Token::RBrace(x), rest @ ..]) => {
                 state = state.update(rest, Some(x));
@@ -535,6 +533,19 @@ fn parse_record_type(mut state: State) -> ParserReturn<RecordDefinition> {
                 let field = RecordDefinitionField {
                     name: n.clone(),
                     type_: TypeDef::Type(n, type_),
+                    mutable: false,
+                };
+                fields.push(field);
+                state = new_state;
+                check_for_comma = true;
+            }
+            (false, [Token::Mut(_), Token::Identifier(name), Token::Colon(_), rest @ ..]) => {
+                let (type_, new_state) = parse_type_literal(state.update(rest, Some(name)))?;
+                let n = take_value(name);
+                let field = RecordDefinitionField {
+                    name: n.clone(),
+                    type_: TypeDef::Type(n, type_),
+                    mutable: true,
                 };
                 fields.push(field);
                 state = new_state;
