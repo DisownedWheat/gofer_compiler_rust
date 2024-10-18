@@ -7,6 +7,6 @@ fn main() {
         .filter(|x| x.is_ok())
         .map(|x| x.unwrap())
         .collect();
-    println!("{:?}", filtered_tokens);
+    // println!("{:?}", filtered_tokens);
     println!("{:?}", parser::parser::parse(filtered_tokens));
 }

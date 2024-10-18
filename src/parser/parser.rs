@@ -1,13 +1,70 @@
 use super::ast::*;
 use crate::lexer::logos_lexer::Token;
 use crate::lexer::tokens::TokenValue;
+use error::{Error, Kind};
+pub type ParserError = error::Error;
 
-// Line, column
+mod error {
+    use super::State;
+    // Line, column
+
+    #[derive(Debug)]
+    pub struct ErrorState {
+        pub line: usize,
+        pub column: usize,
+        pub message: String,
+    }
+
+    pub enum Kind {
+        UnexpectedToken,
+        InvalidImport,
+        UnexpectedEOF,
+    }
+
+    #[derive(Debug)]
+    pub enum Error {
+        UnexpectedToken(ErrorState),
+        InvalidImport(ErrorState),
+        UnexpectedEOF(ErrorState),
+    }
+
+    impl Error {
+        pub fn new(error_kind: Kind, message: &str, state: &State) -> Self {
+            match error_kind {
+                Kind::UnexpectedToken => Self::unexpected_token(message, state),
+                Kind::InvalidImport => Self::invalid_import(message, state),
+                Kind::UnexpectedEOF => Self::unexpected_eof(message, state),
+            }
+        }
+        fn unexpected_token(message: &str, state: &State) -> Self {
+            Self::UnexpectedToken(ErrorState {
+                line: state.line,
+                column: state.column,
+                message: message.to_string(),
+            })
+        }
+
+        fn unexpected_eof(message: &str, state: &State) -> Self {
+            Self::UnexpectedEOF(ErrorState {
+                line: state.line,
+                column: state.column,
+                message: message.to_string(),
+            })
+        }
+        fn invalid_import(message: &str, state: &State) -> Self {
+            Self::InvalidImport(ErrorState {
+                line: state.line,
+                column: state.column,
+                message: message.to_string(),
+            })
+        }
+    }
+}
 #[derive(Debug)]
-struct State<'a> {
-    line: usize,
-    column: usize,
-    tokens: &'a [Token],
+pub struct State<'a> {
+    pub line: usize,
+    pub column: usize,
+    pub tokens: &'a [Token],
 }
 
 impl<'a> State<'a> {
@@ -30,14 +87,14 @@ impl<'a> State<'a> {
     }
 }
 
-type ParserReturn<'a, T> = Result<(T, State<'a>), String>;
+pub type ParserReturn<'a, T> = Result<(T, State<'a>), ParserError>;
 
 pub enum Delimiter {
     Func(Box<dyn Fn(&[Token]) -> bool>),
     None,
 }
 
-pub fn parse(tokens: Vec<Token>) -> Result<ASTNode, String> {
+pub fn parse(tokens: Vec<Token>) -> Result<ASTNode, ParserError> {
     let state = State {
         line: 1,
         column: 1,
@@ -49,7 +106,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<ASTNode, String> {
     }
 }
 
-fn parse_top_level<'a>(mut state: State<'a>) -> Result<(Vec<ASTNode>, State<'a>), String> {
+fn parse_top_level<'a>(mut state: State<'a>) -> Result<(Vec<ASTNode>, State<'a>), ParserError> {
     let mut vec = Vec::<ASTNode>::new();
     let mut is_pub = false;
     loop {
@@ -61,7 +118,11 @@ fn parse_top_level<'a>(mut state: State<'a>) -> Result<(Vec<ASTNode>, State<'a>)
             [Token::EOF(_)] => break,
             [Token::Import(_), rest @ ..] => {
                 if is_pub {
-                    return Err("Cannot have a public import".to_string());
+                    return Err(ParserError::new(
+                        Kind::UnexpectedToken,
+                        "Cannot have public import",
+                        &state,
+                    ));
                 }
                 let (node, new_state) = parse_import(state.update(rest, None))?;
                 state = new_state;
@@ -70,7 +131,11 @@ fn parse_top_level<'a>(mut state: State<'a>) -> Result<(Vec<ASTNode>, State<'a>)
             }
             [Token::Pub(x), rest @ ..] => {
                 if is_pub {
-                    return Err("Cannot have multiple public declarations".to_string());
+                    return Err(ParserError::new(
+                        Kind::UnexpectedToken,
+                        "Cannot have multiple public statements",
+                        &state,
+                    ));
                 }
                 is_pub = true;
                 state = state.update(rest, Some(x));
@@ -85,9 +150,11 @@ fn parse_top_level<'a>(mut state: State<'a>) -> Result<(Vec<ASTNode>, State<'a>)
                 ));
                 is_pub = false;
             }
-            [Token::Function(x), Token::Identifier(_), ..] => {
+            [Token::Function(x), Token::Identifier(name), ..] => {
                 let new_tokens = &state.tokens[1..];
-                let (node, new_state) = parse_function(state.update(new_tokens, Some(x)))?;
+                let name = take_value(name);
+                let (node, new_state) =
+                    parse_function(state.update(new_tokens, Some(x)), Some(name))?;
                 state = new_state;
                 vec.push(ASTNode::TopLevel(
                     is_pub,
@@ -97,7 +164,7 @@ fn parse_top_level<'a>(mut state: State<'a>) -> Result<(Vec<ASTNode>, State<'a>)
             }
             [Token::TypeKeyword(x), Token::Identifier(tok), Token::Assign(_), rest @ ..] => {
                 let new_state = state.update(rest, Some(x));
-                let (node, new_state) = parse_type_definition(tok.value.clone(), new_state)?;
+                let (node, new_state) = parse_type_definition(take_value(tok), new_state)?;
                 state = new_state;
                 vec.push(ASTNode::TopLevel(is_pub, TopLevel::TopLevelTypeDef(node)));
                 is_pub = false;
@@ -126,7 +193,7 @@ fn parse_top_level<'a>(mut state: State<'a>) -> Result<(Vec<ASTNode>, State<'a>)
 fn internal_parse<'a>(
     mut state: State<'a>,
     delim: Delimiter,
-) -> Result<(Vec<ASTNode>, State<'a>), String> {
+) -> Result<(Vec<ASTNode>, State<'a>), ParserError> {
     let mut vec = Vec::<ASTNode>::new();
     loop {
         if state.tokens.is_empty() {
@@ -177,7 +244,11 @@ fn parse_let_statement<'a>(state: State<'a>) -> ParserReturn<ASTNode> {
                 new_state,
             ))
         }
-        _ => Err("Invalid let statement".to_string()),
+        _ => Err(Error::new(
+            Kind::UnexpectedToken,
+            "Invalid let statement",
+            &new_state,
+        )),
     }
 }
 
@@ -226,7 +297,13 @@ fn parse_left_let_statement<'a>(mut state: State<'a>) -> ParserReturn<Identifier
                         idents.push(ident);
                         state = new_state;
                     }
-                    _ => return Err("Invalid let statement".to_string()),
+                    _ => {
+                        return Err(Error::new(
+                            Kind::UnexpectedToken,
+                            "Invalid let statement",
+                            &state,
+                        ))
+                    }
                 }
             }
         }
@@ -253,7 +330,13 @@ fn parse_left_let_statement<'a>(mut state: State<'a>) -> ParserReturn<Identifier
                         idents.push(ident);
                         state = new_state;
                     }
-                    _ => return Err("Invalid let statement".to_string()),
+                    _ => {
+                        return Err(Error::new(
+                            Kind::UnexpectedToken,
+                            "Invalid let statement",
+                            &state,
+                        ))
+                    }
                 }
             }
         }
@@ -280,11 +363,23 @@ fn parse_left_let_statement<'a>(mut state: State<'a>) -> ParserReturn<Identifier
                         idents.push(ident);
                         state = new_state;
                     }
-                    _ => return Err("Invalid let statement".to_string()),
+                    _ => {
+                        return Err(Error::new(
+                            Kind::UnexpectedToken,
+                            "Invalid let statement",
+                            &state,
+                        ))
+                    }
                 }
             }
         }
-        _ => return Err("Invalid let statement".to_string()),
+        _ => {
+            return Err(Error::new(
+                Kind::UnexpectedToken,
+                "Invalid let statement",
+                &state,
+            ))
+        }
     };
 
     loop {
@@ -296,17 +391,23 @@ fn parse_left_let_statement<'a>(mut state: State<'a>) -> ParserReturn<Identifier
                     Some(IdentifierType::Identifier((i, _))) => {
                         Some(IdentifierType::Identifier((i, Some(t))))
                     }
-                    _ => return Err("Invalid let statement".to_string()),
+                    _ => {
+                        return Err(Error::new(
+                            Kind::UnexpectedToken,
+                            "Invalid let statement",
+                            &state,
+                        ))
+                    }
                 };
             }
             [Token::Assign(x), rest @ ..] => {
                 return Ok((ident.unwrap(), state.update(rest, Some(x))));
             }
             _ => {
-                return Err(format!(
-                    "Invalid let statement at {:?}\n {:?}",
-                    state,
-                    state.tokens.first().unwrap()
+                return Err(Error::new(
+                    Kind::UnexpectedToken,
+                    "Invalid let statement",
+                    &state,
                 ))
             }
         }
@@ -328,8 +429,12 @@ fn process<'a>(state: State<'a>) -> ParserReturn<ASTNode> {
         [Token::LParen(x), rest @ ..] => parse_paren_expression(state.update(rest, Some(x)))?,
         [Token::LBrace(x), rest @ ..] => parse_brace_expression(state.update(rest, Some(x)))?,
         [Token::LBracket(x), rest @ ..] => parse_array_literal(state.update(rest, Some(x)))?,
-        [Token::Function(x) | Token::Let(x), rest @ ..] => {
-            parse_function(state.update(rest, Some(x)))
+        [Token::Function(_), Token::LParen(x), rest @ ..] => {
+            let new_state = state.update(rest, Some(x));
+            parse_function(new_state, None).map(|(f, s)| (ASTNode::FunctionDefinition(f), s))?
+        }
+        [Token::Function(x), Token::Identifier(name), rest @ ..] => {
+            parse_function(state.update(rest, Some(x)), Some(take_value(name)))
                 .map(|(f, s)| (ASTNode::FunctionDefinition(f), s))?
         }
         _ => Err(format!(
@@ -411,19 +516,21 @@ fn parse_import(state: State) -> ParserReturn<ASTNode> {
             }),
             state.update(rest, Some(t)),
         )),
-        _ => Err(format!(
-            "Invalid import statement at {:?}\n {:?}",
-            state,
-            state.tokens.first().unwrap()
+        _ => Err(Error::new(
+            Kind::InvalidImport,
+            "Invalid import statement",
+            &state,
         )),
     }
 }
 
-fn parse_function(state: State) -> ParserReturn<FunctionDefinition> {
+fn parse_function(mut state: State, name: Option<String>) -> ParserReturn<FunctionDefinition> {
     // let match_return_type = |state: State| match &state.tokens {
     //     [Token::ReturnType(_), tail @ ..] => Some(parse_type_literal(state.update(tail, None))),
     //     _ => None,
     // };
+    let (args, new_state) = parse_function_args(state)?;
+    state = new_state;
 
     match state.tokens {
         [Token::Identifier(_), Token::LParen(t), rest @ ..] => {
@@ -433,14 +540,30 @@ fn parse_function(state: State) -> ParserReturn<FunctionDefinition> {
     }
 }
 
-fn parse_function_args<'a>(state: State<'a>) -> Result<(Vec<FunctionArgument>, State<'a>), String> {
+fn parse_function_args<'a>(state: State<'a>) -> Result<(Vec<FunctionArgument>, State<'a>), Error> {
     let mut previous_was_comma = false;
     let mut mutable = false;
     let mut args = vec![];
     loop {
         match (state.tokens, (previous_was_comma || args.len() < 1)) {
-            ([], _) => return Err(format!("Invalid function args at {:?}\n", state)),
-            ([Token::RParen(x), rest @ ..], _) => return Ok((args, state.update(rest, Some(x)))),
+            ([], _) => {
+                return Err(Error::new(Kind::UnexpectedEOF, "Unexpected EOF", &state));
+            }
+
+            ([Token::RParen(x), rest @ ..], false) => {
+                return Ok((args, state.update(rest, Some(x))));
+            }
+            ([Token::RParen(x), rest @ ..], true) => {
+                return Err(Error::new(
+                    Kind::UnexpectedToken,
+                    "Invalid function args",
+                    &state,
+                ));
+            }
+
+            ([Token::Identifier(ident), Token::Colon(_), rest @ ..], _) => {
+                return Ok((args, state.update(rest, Some(ident))));
+            }
             _ => todo!("parse_function_args"),
         }
     }
@@ -456,15 +579,15 @@ fn parse_struct_method_definition(state: State) -> ParserReturn<(String, Functio
             };
             todo!("parse_struct_method_definition")
         }
-        _ => Err(format!(
-            "Invalid struct method definition at {:?}\n {:?}",
-            state,
-            state.tokens.first().unwrap()
+        _ => Err(Error::new(
+            Kind::UnexpectedToken,
+            "Invalid struct method definition",
+            &state,
         )),
     }
 }
 
-fn parse_type_literal(state: State) -> Result<(Type, State), String> {
+fn parse_type_literal(state: State) -> Result<(Type, State), Error> {
     let (is_slice, state) = match state.tokens {
         [Token::LBracket(_), Token::RBracket(_), rest @ ..] => (true, state.update(rest, None)),
         _ => (false, state),
@@ -494,10 +617,10 @@ fn parse_type_literal(state: State) -> Result<(Type, State), String> {
             };
             Ok((type_, state.update(rest, Some(t))))
         }
-        _ => Err(format!(
-            "Invalid type declaration at {:?}\n {:?}",
-            state,
-            state.tokens.first().unwrap()
+        _ => Err(Error::new(
+            Kind::UnexpectedToken,
+            "Invalid type literal",
+            &state,
         )),
     }
 }
@@ -533,19 +656,19 @@ fn parse_record_type(mut state: State) -> ParserReturn<RecordDefinition> {
                 let field = RecordDefinitionField {
                     name: n.clone(),
                     type_: TypeDef::Type(n, type_),
-                    mutable: false,
+                    is_pub: false,
                 };
                 fields.push(field);
                 state = new_state;
                 check_for_comma = true;
             }
-            (false, [Token::Mut(_), Token::Identifier(name), Token::Colon(_), rest @ ..]) => {
+            (false, [Token::Pub(_), Token::Identifier(name), Token::Colon(_), rest @ ..]) => {
                 let (type_, new_state) = parse_type_literal(state.update(rest, Some(name)))?;
                 let n = take_value(name);
                 let field = RecordDefinitionField {
                     name: n.clone(),
                     type_: TypeDef::Type(n, type_),
-                    mutable: true,
+                    is_pub: true,
                 };
                 fields.push(field);
                 state = new_state;
@@ -555,7 +678,15 @@ fn parse_record_type(mut state: State) -> ParserReturn<RecordDefinition> {
                 state = state.update(rest, Some(x));
                 check_for_comma = false;
             }
-            _ => return Err("Invalid record type".to_string()),
+            _ => {
+                println!("\n\n\n");
+                println!("{:?}", &state.tokens[..5]);
+                return Err(Error::new(
+                    Kind::UnexpectedToken,
+                    "Invalid record definition",
+                    &state,
+                ));
+            }
         }
     }
 }
@@ -579,7 +710,13 @@ fn parse_enum(mut state: State) -> ParserReturn<EnumDefiniton> {
                 fields.push((take_value(name), None));
                 state = state.update(rest, Some(x));
             }
-            _ => return Err("Invalid enum type".to_string()),
+            _ => {
+                return Err(Error::new(
+                    Kind::UnexpectedToken,
+                    "Invalid enum definition",
+                    &state,
+                ));
+            }
         }
     }
 }
