@@ -2,7 +2,7 @@ import "fmt"
 
 type testRecord = {
 	testVal: int,
-	mut anotherTest: string
+	pub anotherTest: string
 }
 
 fn main() {
