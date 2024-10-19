@@ -21,7 +21,12 @@ pub struct GoImport {
 #[derive(Debug)]
 pub struct Identifier {
     pub value: ASTString,
-    pub mutable: bool,
+}
+
+#[derive(Debug)]
+pub struct Accessor {
+    pub left: Box<ASTNode>,
+    pub right: ASTString,
 }
 
 #[derive(Debug)]
@@ -77,20 +82,20 @@ pub struct RecordLiteral {
 pub struct LetExpression {
     pub identifier: IdentifierType,
     pub value: Box<ASTNode>,
+    pub mutable: bool,
 }
 
 // Functions
 #[derive(Debug)]
 pub struct FunctionArgument {
-    pub identifier: Identifier,
-    pub type_: Type,
-    pub scoped_name: Option<ASTString>,
+    pub identifier: IdentifierType,
+    pub mutable: bool,
 }
 
 #[derive(Debug)]
 pub struct FunctionDefinition {
     pub name: Option<ASTString>,
-    pub arguments: Vec<IdentifierType>,
+    pub arguments: Vec<FunctionArgument>,
     pub return_type: Option<Type>,
     pub body: LogicBlock,
     pub pointer: Option<Identifier>,
@@ -119,12 +124,6 @@ pub enum TopLevel {
 pub struct PipeRight {
     pub left: Box<ASTNode>,
     pub right: Box<ASTNode>,
-}
-
-#[derive(Debug)]
-pub struct Accessor {
-    pub left: Box<ASTNode>,
-    pub right: ASTString,
 }
 
 #[derive(Debug)]

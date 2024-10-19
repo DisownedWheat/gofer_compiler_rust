@@ -334,8 +334,17 @@ fn parse_statement<'a>(state: State<'a>) -> ParserReturn<ASTNode> {
     }
 }
 
-fn parse_let_statement<'a>(state: State<'a>) -> ParserReturn<ASTNode> {
+fn parse_let_statement(mut state: State) -> ParserReturn<ASTNode> {
+    let mutable = match state.tokens {
+        [Token::Mut(x), rest @ ..] => {
+            state = state.update(rest, Some(x));
+            true
+        }
+        _ => false,
+    };
+
     let (left, new_state) = parse_left_let_statement(state)?;
+
     match new_state.tokens {
         [Token::Assign(x), rest @ ..] => {
             let (right, new_state) = parse_expression(new_state.update(rest, Some(x)))?;
@@ -343,6 +352,7 @@ fn parse_let_statement<'a>(state: State<'a>) -> ParserReturn<ASTNode> {
                 ASTNode::LetExpression(LetExpression {
                     identifier: left,
                     value: Box::new(right),
+                    mutable,
                 }),
                 new_state,
             ))
@@ -557,10 +567,7 @@ fn parse_expression(state: State) -> ParserReturn<ASTNode> {
 
     new_state = new_state.skip_newlines();
 
-    let (node, new_state) = match new_state.tokens {
-        [Token::Dot(_), Token::Identifier(_), ..] => parse_accessor(new_state, node)?,
-        _ => (node, new_state),
-    };
+    let (node, new_state) = parse_accessor(new_state, node)?;
 
     match new_state.tokens {
         [Token::PipeRight(x), rest @ ..] => {
@@ -818,13 +825,26 @@ fn parse_function(mut state: State, name: Option<String>) -> ParserReturn<Functi
 
 fn parse_function_args<'a>(
     mut state: State<'a>,
-) -> Result<(Vec<IdentifierType>, State<'a>), Error> {
+) -> Result<(Vec<FunctionArgument>, State<'a>), Error> {
     let mut previous_was_comma = false;
+    let mut mutable = false;
     let mut args = vec![];
     loop {
         match (state.tokens, (previous_was_comma || args.len() < 1)) {
             ([], _) => {
                 return Err(eof_error(&state));
+            }
+            ([tok @ Token::Mut(x), rest @ ..], true) => {
+                if mutable {
+                    return Err(Error::new(
+                        Kind::UnexpectedToken,
+                        "Invalid function args",
+                        &state,
+                        Some(tok.clone()),
+                    ));
+                }
+                mutable = true;
+                state = state.update(rest, Some(x));
             }
             ([Token::Comma(x), rest @ ..], false) => {
                 previous_was_comma = true;
@@ -846,8 +866,12 @@ fn parse_function_args<'a>(
             }
             (_, true) => {
                 let (i, new_state) = parse_identifier(state)?;
+                args.push(FunctionArgument {
+                    identifier: i,
+                    mutable,
+                });
                 state = new_state;
-                args.push(i);
+                mutable = false;
             }
             _ => {
                 return Err(Error::new(
@@ -927,13 +951,6 @@ fn recurse_identifier(mut state: State, delim: Delimiter) -> ParserReturn<Vec<Id
 }
 
 fn parse_identifier(mut state: State) -> ParserReturn<IdentifierType> {
-    let mutable = match state.tokens {
-        [Token::Mut(x), rest @ ..] => {
-            state = state.update(rest, Some(x));
-            true
-        }
-        _ => false,
-    };
     let ident = match state.tokens {
         [] => return Err(eof_error(&state)),
         [Token::Identifier(name), rest @ ..] => {
@@ -941,7 +958,6 @@ fn parse_identifier(mut state: State) -> ParserReturn<IdentifierType> {
             IdentifierType::Identifier(
                 Identifier {
                     value: take_value(name),
-                    mutable,
                 },
                 None,
             )
