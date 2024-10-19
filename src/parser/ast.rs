@@ -26,10 +26,10 @@ pub struct Identifier {
 
 #[derive(Debug)]
 pub enum IdentifierType {
-    Identifier((Identifier, Option<Type>)),
-    ArrayDestructure((Vec<Identifier>, Option<Type>)),
-    RecordDestructure((Vec<Identifier>, Option<Type>)),
-    TupleDestructure((Vec<Identifier>, Option<Type>)),
+    Identifier(Identifier, Option<Type>),
+    ArrayDestructure(Vec<IdentifierType>, Option<Type>),
+    RecordDestructure(Vec<IdentifierType>, Option<Type>),
+    TupleDestructure(Vec<IdentifierType>, Option<Type>),
 }
 
 // Types
@@ -91,7 +91,7 @@ pub struct FunctionArgument {
 #[derive(Debug)]
 pub struct FunctionDefinition {
     pub name: Option<ASTString>,
-    pub arguments: Vec<FunctionArgument>,
+    pub arguments: Vec<IdentifierType>,
     pub return_type: Option<Type>,
     pub body: LogicBlock,
     pub pointer: Option<Identifier>,
