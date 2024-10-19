@@ -1,10 +1,3 @@
-#[derive(Debug, PartialEq, Default)]
-pub struct TokenValue {
-    pub value: String,
-    pub line: usize,
-    pub column: usize,
-}
-
 #[derive(Debug)]
 pub enum TokenOld {
     Number(TokenValue),

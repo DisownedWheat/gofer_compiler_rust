@@ -1,11 +1,22 @@
 mod lexer;
 mod parser;
 fn main() {
-    let tokens = lexer::logos_lexer::lex("./test_file").expect("Failed to lex file");
+    let tokens = lexer::lexer::lex("./test_file").expect("Failed to lex file");
     let filtered_tokens = tokens
         .into_iter()
-        .filter(|x| x.is_ok())
+        .filter(|x| {
+            if x.is_ok() {
+                return true;
+            } else {
+                println!("{:?}", x);
+                return false;
+            }
+        })
         .map(|x| x.unwrap())
+        .filter(|x| match x {
+            lexer::lexer::Token::Whitespace => false,
+            _ => true,
+        })
         .collect();
     // println!("{:?}", filtered_tokens);
     println!("{:?}", parser::parser::parse(filtered_tokens));

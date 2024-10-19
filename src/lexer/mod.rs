@@ -1,2 +1,1 @@
-pub mod logos_lexer;
-pub mod tokens;
+pub mod lexer;
