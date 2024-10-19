@@ -130,6 +130,8 @@ pub enum Token {
     And(TokenValue),
     #[token("||", token_value_callback)]
     Or(TokenValue),
+    #[token("|>", token_value_callback)]
+    PipeRight(TokenValue),
     #[token("|", token_value_callback)]
     Pipe(TokenValue),
     #[token("..", token_value_callback)]

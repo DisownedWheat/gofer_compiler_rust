@@ -101,6 +101,36 @@ mod types {
                 })
             }
         }
+
+        pub fn skip_newlines(self) -> State<'a> {
+            let mut toks = self.tokens;
+            loop {
+                match toks {
+                    [Token::NewLine, rest @ ..] => {
+                        toks = rest;
+                        continue;
+                    }
+                    _ => {
+                        return State {
+                            tokens: toks,
+                            ..self
+                        }
+                    }
+                }
+            }
+        }
+
+        pub fn skip_newlines_mut(&mut self) -> &[Token] {
+            loop {
+                match self.tokens {
+                    [Token::NewLine, rest @ ..] => {
+                        self.tokens = rest;
+                        continue;
+                    }
+                    _ => return self.tokens,
+                }
+            }
+        }
     }
 
     pub type ParserReturn<'a, T> = Result<(T, State<'a>), Error>;
@@ -119,12 +149,29 @@ pub struct ErrorReturn {
     message: String,
     token: Option<Token>,
     tokens: Vec<Token>,
-    position: usize,
 }
 
-impl Display for ErrorReturn {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
+impl ErrorReturn {
+    pub fn new(error: Error, tokens: Vec<Token>) -> Self {
+        match error {
+            Error::UnexpectedToken(x)
+            | Error::UnexpectedEOF(x)
+            | Error::NoDelimiter(x)
+            | Error::InvalidImport(x) => {
+                let new_tokens: Vec<Token> = tokens
+                    .into_iter()
+                    .skip(std::cmp::max(x.length - 5, 0))
+                    .collect();
+
+                Self {
+                    message: x.message,
+                    line: x.line,
+                    column: x.column,
+                    token: x.token,
+                    tokens: new_tokens,
+                }
+            }
+        }
     }
 }
 
@@ -146,19 +193,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<ASTNode, ErrorReturn> {
     state.tokens.iter().for_each(|x| println!("{:?}", x));
     match parse_top_level(state) {
         Ok((vec, _)) => Ok(ASTNode::Root(vec)),
-        Err(e) => match e {
-            Error::UnexpectedToken(x)
-            | Error::UnexpectedEOF(x)
-            | Error::NoDelimiter(x)
-            | Error::InvalidImport(x) => Err(ErrorReturn {
-                message: x.message,
-                line: x.line,
-                column: x.column,
-                token: x.token,
-                position: tokens.len() - x.length,
-                tokens,
-            }),
-        },
+        Err(e) => Err(ErrorReturn::new(e, tokens)),
     }
 }
 
@@ -269,8 +304,15 @@ fn internal_parse<'a>(
             }
             _ => (),
         }
+        match state.tokens {
+            [Token::NewLine, rest @ ..] => {
+                state = state.update(rest, None);
+                continue;
+            }
+            _ => (),
+        }
 
-        match parse_expression(state) {
+        match parse_statement(state) {
             Ok((new_node, new_state)) => {
                 state = new_state;
                 vec.push(new_node);
@@ -479,7 +521,7 @@ fn parse_left_let_statement<'a>(state: State<'a>) -> ParserReturn<IdentifierType
 }
 
 fn parse_expression(state: State) -> ParserReturn<ASTNode> {
-    let (node, new_state) = match &state.tokens {
+    let (node, mut new_state) = match &state.tokens {
         [Token::String(s), rest @ ..] => (
             ASTNode::StringLiteral(take_value(s)),
             state.update(rest, Some(s)),
@@ -495,6 +537,10 @@ fn parse_expression(state: State) -> ParserReturn<ASTNode> {
             let new_state = state.update(rest, Some(x));
             parse_function(new_state, None).map(|(f, s)| (ASTNode::FunctionDefinition(f), s))?
         }
+        [Token::Identifier(_), ..] => {
+            let (i, s) = parse_identifier(state)?;
+            (ASTNode::Identifier(i), s)
+        }
         [x, ..] => Err(Error::new(
             Kind::UnexpectedToken,
             "Invalid expression",
@@ -509,22 +555,56 @@ fn parse_expression(state: State) -> ParserReturn<ASTNode> {
         ))?,
     };
 
-    match &new_state.tokens {
-        [Token::Pipe(_), rest @ ..] => Ok((node, new_state.update(rest, None))),
-        [Token::Assign(_), rest @ ..] => Ok((node, new_state.update(rest, None))),
-        [Token::NewLine, rest @ ..] => Ok((node, new_state.update(rest, None))),
-        [x, ..] => Err(Error::new(
-            Kind::UnexpectedToken,
-            "Invalid expression",
-            &new_state,
-            Some(x.clone()),
-        )),
+    new_state = new_state.skip_newlines();
+
+    let (node, new_state) = match new_state.tokens {
+        [Token::Dot(_), Token::Identifier(_), ..] => parse_accessor(new_state, node)?,
+        _ => (node, new_state),
+    };
+
+    match new_state.tokens {
+        [Token::PipeRight(x), rest @ ..] => {
+            let left = Box::new(node);
+            let (right, new_state) = parse_expression(new_state.update(rest, Some(x)))?;
+            let pipe = PipeRight {
+                left,
+                right: Box::new(right),
+            };
+            Ok((ASTNode::PipeRight(pipe), new_state))
+        }
+        [Token::Assign(x), rest @ ..] => {
+            let left = Box::new(node);
+            let (right, new_state) = parse_expression(new_state.update(rest, Some(x)))?;
+            let assign = Assign {
+                left,
+                right: Box::new(right),
+            };
+            Ok((ASTNode::Assign(assign), new_state))
+        }
         [] => Err(Error::new(
             Kind::UnexpectedEOF,
             "Unexpected EOF",
             &new_state,
             None,
         )),
+        _ => Ok((node, new_state)),
+    }
+}
+
+fn parse_accessor(mut state: State, mut node: ASTNode) -> ParserReturn<ASTNode> {
+    loop {
+        match state.tokens {
+            [Token::Dot(x), Token::Identifier(name), rest @ ..] => {
+                let left = Box::new(node);
+                let accessor = ASTNode::Accessor(Accessor {
+                    left,
+                    right: take_value(name),
+                });
+                node = accessor;
+                state = state.update(rest, Some(x));
+            }
+            _ => return Ok((node, state)),
+        }
     }
 }
 
@@ -543,11 +623,16 @@ fn parse_paren_expression(state: State) -> ParserReturn<ASTNode> {
     }
 }
 
-fn parse_brace_expression(state: State) -> ParserReturn<ASTNode> {
+fn parse_brace_expression(mut state: State) -> ParserReturn<ASTNode> {
     let delim = Box::new(|tokens: &[Token]| match tokens {
         [Token::RBrace(_), ..] => true,
         _ => false,
     });
+    match state.skip_newlines_mut() {
+        [] => return Err(eof_error(&state)),
+        [Token::Identifier(_), Token::Colon(_), ..] => return parse_record_literal(state),
+        _ => (),
+    }
     match internal_parse(state, Delimiter::Func(delim)) {
         Ok((nodes, state)) => {
             let new_node = ASTNode::LogicBlock(nodes);
@@ -555,6 +640,60 @@ fn parse_brace_expression(state: State) -> ParserReturn<ASTNode> {
         }
         Err(e) => Err(e),
     }
+}
+
+fn parse_record_literal(mut state: State) -> ParserReturn<ASTNode> {
+    let mut previous_was_comma = false;
+    let mut fields = vec![];
+    loop {
+        match (previous_was_comma || fields.len() < 1, state.tokens) {
+            (_, []) => Err(Error::new(
+                Kind::UnexpectedEOF,
+                "Unexpected EOF",
+                &state,
+                None,
+            ))?,
+            (_, [Token::NewLine, rest @ ..]) => {
+                state = state.update(rest, None);
+                continue;
+            }
+            (_, [Token::RBrace(x), rest @ ..]) => {
+                state = state.update(rest, Some(x));
+                break;
+            }
+            (false, [Token::Comma(x), rest @ ..]) => {
+                state = state.update(rest, Some(x));
+                previous_was_comma = true;
+            }
+            (true, [tok @ Token::Comma(_), ..]) => {
+                return Err(Error::new(
+                    Kind::UnexpectedToken,
+                    "Invalid record literal",
+                    &state,
+                    Some(tok.clone()),
+                ));
+            }
+            (true, [Token::Identifier(name), Token::Colon(x), rest @ ..]) => {
+                state = state.update(rest, Some(x));
+                let (value, new_state) = parse_expression(state)?;
+                state = new_state;
+                fields.push(RecordField {
+                    name: take_value(name),
+                    value,
+                });
+                previous_was_comma = false;
+            }
+            (_, [tok, ..]) => {
+                return Err(Error::new(
+                    Kind::UnexpectedToken,
+                    "Invalid record literal",
+                    &state,
+                    Some(tok.clone()),
+                ));
+            }
+        }
+    }
+    Ok((ASTNode::RecordLiteral(RecordLiteral { fields }), state))
 }
 
 fn parse_array_literal(state: State) -> ParserReturn<ASTNode> {
@@ -618,15 +757,16 @@ fn parse_function(mut state: State, name: Option<String>) -> ParserReturn<Functi
         [Token::LParen(x), rest @ ..] => {
             state = state.update(rest, Some(x));
         }
-        [x, ..] => {
-            return Err(Error::new(
-                Kind::UnexpectedToken,
-                "Invalid function syntax",
-                &state,
-                Some(x.clone()),
-            ));
-        }
+        // [x, ..] => {
+        //     return Err(Error::new(
+        //         Kind::UnexpectedToken,
+        //         "Invalid function syntax",
+        //         &state,
+        //         Some(x.clone()),
+        //     ));
+        // }
         [] => Err(eof_error(&state))?,
+        _ => (),
     }
     debug_print("Parsing function 2", &state);
     let (args, new_state) = parse_function_args(state)?;
@@ -682,7 +822,7 @@ fn parse_function_args<'a>(
     let mut previous_was_comma = false;
     let mut args = vec![];
     loop {
-        match (state.tokens, (previous_was_comma && args.len() < 1)) {
+        match (state.tokens, (previous_was_comma || args.len() < 1)) {
             ([], _) => {
                 return Err(eof_error(&state));
             }
@@ -691,11 +831,12 @@ fn parse_function_args<'a>(
                 state = state.update(rest, Some(x));
             }
             ([Token::RParen(x), rest @ ..], false) => {
-                debug_print("This is the final function arg", &state);
                 return Ok((args, state.update(rest, Some(x))));
             }
             ([tok @ Token::RParen(x), rest @ ..], true) => {
-                state = state.update(rest, Some(x));
+                if args.len() == 0 {
+                    return Ok((args, state.update(rest, Some(x))));
+                }
                 return Err(Error::new(
                     Kind::UnexpectedToken,
                     "Invalid function args",
@@ -703,11 +844,18 @@ fn parse_function_args<'a>(
                     Some(tok.clone()),
                 ));
             }
-            (rest @ _, _) => {
-                println!("parsing function args, {:?}", &rest[..5]);
+            (_, true) => {
                 let (i, new_state) = parse_identifier(state)?;
                 state = new_state;
                 args.push(i);
+            }
+            _ => {
+                return Err(Error::new(
+                    Kind::UnexpectedToken,
+                    "Invalid function args",
+                    &state,
+                    None,
+                ));
             }
         }
     }
@@ -789,7 +937,6 @@ fn parse_identifier(mut state: State) -> ParserReturn<IdentifierType> {
     let ident = match state.tokens {
         [] => return Err(eof_error(&state)),
         [Token::Identifier(name), rest @ ..] => {
-            println!("Inside regular identifier, {:?}", &state.tokens[..5]);
             state = state.update(rest, Some(name));
             IdentifierType::Identifier(
                 Identifier {
@@ -921,9 +1068,11 @@ fn parse_record_type(mut state: State) -> ParserReturn<RecordDefinition> {
     let mut fields: Vec<RecordDefinitionField> = vec![];
     let mut check_for_comma = false;
     loop {
-        // println!("{:?}", fields);
-        // println!("{:?}", &state.tokens[..5]);
         match (check_for_comma, state.tokens) {
+            (_, [Token::NewLine, rest @ ..]) => {
+                state = state.update(rest, None);
+                continue;
+            }
             (_, [Token::RBrace(x), rest @ ..]) => {
                 state = state.update(rest, Some(x));
                 let record = RecordDefinition { fields };
@@ -959,8 +1108,6 @@ fn parse_record_type(mut state: State) -> ParserReturn<RecordDefinition> {
             }
             (_, []) => return Err(eof_error(&state)),
             (_, [x, ..]) => {
-                // println!("\n\n\n");
-                // println!("{:?}", &state.tokens[..5]);
                 return Err(Error::new(
                     Kind::UnexpectedToken,
                     "Invalid record definition",

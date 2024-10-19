@@ -19,5 +19,7 @@ fn main() {
         })
         .collect();
     // println!("{:?}", filtered_tokens);
-    println!("{:?}", parser::parser::parse(filtered_tokens));
+    let _ = parser::parser::parse(filtered_tokens)
+        .map(|x| x.print())
+        .map_err(|x| println!("{:?}", x));
 }
